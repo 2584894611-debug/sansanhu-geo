@@ -12,6 +12,7 @@
             监测 <span v-if="!userStore.isPremium" class="lock-icon">🔒</span>
           </router-link>
           <router-link to="/profile" class="nav-link">个人中心</router-link>
+          <router-link to="/about" class="nav-link">关于我们</router-link>
         </nav>
         <div class="user-status">
           <span v-if="!userStore.isPremium" class="free-tag">免费版</span>
@@ -26,7 +27,7 @@
     </main>
     
     <footer class="app-footer">
-      <p>好易易GEO © 2024 | 联系我们: 189 8603 4050</p>
+      <p>好易易GEO © 2025 · 鄂ICP备2025150688号 · 联系我们: 189 8603 4050</p>
     </footer>
     
     <PaywallModal v-if="showPaywall" @close="showPaywall = false" />
