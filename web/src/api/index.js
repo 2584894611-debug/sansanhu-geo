@@ -47,7 +47,29 @@ export const api = {
   activatePremium: (token) => apiClient.post('/premium/activate', null, { params: { token } }),
   
   // 健康检查
-  healthCheck: () => apiClient.get('/health')
+  healthCheck: () => apiClient.get('/health'),
+  
+  // ===== 监测订阅 API =====
+  // 创建监测订阅
+  createMonitor: (data) => apiClient.post('/monitor', data),
+  
+  // 获取监测列表
+  getMonitors: () => apiClient.get('/monitor'),
+  
+  // 获取监测历史
+  getMonitorHistory: (subscriptionId, days = 30) => 
+    apiClient.get(`/monitor/${subscriptionId}/history`, { params: { days } }),
+  
+  // 删除监测订阅
+  deleteMonitor: (subscriptionId) => apiClient.delete(`/monitor/${subscriptionId}`),
+  
+  // ===== 行业 API =====
+  // 获取行业列表
+  getIndustries: () => apiClient.get('/industries'),
+  
+  // 获取行业基准数据
+  getIndustryBenchmarks: (industryId) => 
+    apiClient.get(`/industries/benchmarks/${industryId}`)
 }
 
 export default api

@@ -15,19 +15,45 @@
     <div class="form-group">
       <label class="form-label">所属行业</label>
       <select v-model="form.industry" class="select" :disabled="loading">
-        <option value="通用">通用</option>
-        <option value="科技">科技</option>
-        <option value="金融">金融</option>
-        <option value="教育">教育</option>
-        <option value="医疗健康">医疗健康</option>
-        <option value="零售">零售</option>
-        <option value="餐饮">餐饮</option>
-        <option value="旅游">旅游</option>
-        <option value="房地产">房地产</option>
-        <option value="制造业">制造业</option>
-        <option value="媒体娱乐">媒体娱乐</option>
-        <option value="其他">其他</option>
+        <optgroup label="🧠 知识盲区品类">
+          <option value="消费电子">消费电子</option>
+          <option value="母婴用品">母婴用品</option>
+          <option value="运动健身">运动健身</option>
+        </optgroup>
+        <optgroup label="💰 低频高客单">
+          <option value="商业地产">商业地产</option>
+          <option value="文旅">文旅</option>
+          <option value="装修建材">装修建材</option>
+          <option value="婚纱摄影">婚纱摄影</option>
+          <option value="月子中心">月子中心</option>
+        </optgroup>
+        <optgroup label="🔍 长尾痛点微创新">
+          <option value="智能硬件">智能硬件</option>
+          <option value="个护创新">个护创新</option>
+          <option value="小家电">小家电</option>
+        </optgroup>
+        <optgroup label="🏢 To B业务">
+          <option value="SaaS软件">SaaS软件</option>
+          <option value="工业设备">工业设备</option>
+          <option value="企业服务">企业服务</option>
+        </optgroup>
+        <optgroup label="通用">
+          <option value="科技">科技</option>
+          <option value="金融">金融</option>
+          <option value="教育">教育</option>
+          <option value="医疗健康">医疗健康</option>
+          <option value="零售">零售</option>
+          <option value="餐饮">餐饮</option>
+          <option value="旅游">旅游</option>
+          <option value="房地产">房地产</option>
+          <option value="制造业">制造业</option>
+          <option value="媒体娱乐">媒体娱乐</option>
+          <option value="其他">其他</option>
+        </optgroup>
       </select>
+      <div v-if="form.industry && industryBenchmark" class="benchmark-tip">
+        行业基准分: {{ industryBenchmark }}分
+      </div>
     </div>
     
     <div class="form-actions">
@@ -53,7 +79,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useUserStore } from '../stores/user'
 import api from '../api'
 
@@ -68,6 +94,20 @@ const form = ref({
 
 const loading = ref(false)
 const error = ref('')
+
+// 行业基准分映射
+const benchmarkMap = {
+  '消费电子': 45, '母婴用品': 45, '运动健身': 45,
+  '商业地产': 50, '文旅': 50, '装修建材': 50, '婚纱摄影': 50, '月子中心': 50,
+  '智能硬件': 40, '个护创新': 40, '小家电': 40,
+  'SaaS软件': 55, '工业设备': 55, '企业服务': 55,
+  '科技': 50, '金融': 50, '教育': 50, '医疗健康': 50, '零售': 50,
+  '餐饮': 50, '旅游': 50, '房地产': 50, '制造业': 50, '媒体娱乐': 50, '其他': 50, '通用': 50
+}
+
+const industryBenchmark = computed(() => {
+  return benchmarkMap[form.value.industry] || 50
+})
 
 const canSubmit = computed(() => {
   return form.value.brand.trim().length >= 2 && userStore.canAnalyze
@@ -154,5 +194,15 @@ async function handleAnalyze() {
   color: #e53e3e;
   font-size: 0.875rem;
   text-align: center;
+}
+
+.benchmark-tip {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #D4AF37;
+  background: rgba(212, 175, 55, 0.1);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+  display: inline-block;
 }
 </style>

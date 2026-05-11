@@ -58,6 +58,39 @@
         </div>
       </div>
       
+      <!-- 行业对标数据 -->
+      <div v-if="industryBenchmark" class="benchmark-section card">
+        <h3 class="card-title">📊 行业对标</h3>
+        <div class="benchmark-content">
+          <div class="benchmark-category">
+            <span class="category-icon">{{ industryBenchmark.category_icon }}</span>
+            <span class="category-name">{{ industryBenchmark.category_name }}</span>
+          </div>
+          <div class="benchmark-score">
+            <div class="score-compare">
+              <div class="compare-item">
+                <span class="compare-label">您的评分</span>
+                <span class="compare-value user">{{ reportData.geo_score }}</span>
+              </div>
+              <div class="compare-divider">vs</div>
+              <div class="compare-item">
+                <span class="compare-label">行业基准</span>
+                <span class="compare-value benchmark">{{ industryBenchmark.benchmark_geo_score }}</span>
+              </div>
+            </div>
+            <div class="compare-result" :class="getCompareClass()">
+              {{ getCompareResult() }}
+            </div>
+          </div>
+          <div class="benchmark-factors">
+            <span class="factors-label">关键因素：</span>
+            <span v-for="factor in industryBenchmark.key_factors" :key="factor" class="factor-tag">
+              {{ factor }}
+            </span>
+          </div>
+        </div>
+      </div>
+      
       <DiagnosisList 
         :items="reportData.diagnosis || []"
         :limit="3"
@@ -128,6 +161,35 @@ const loading = ref(true)
 const reportData = ref(null)
 const showPaywall = ref(false)
 
+// 行业分类映射
+const industryCategoryMap = {
+  '消费电子': { category_id: 'knowledge_gap', category_name: '知识盲区品类', category_icon: '🧠', benchmark_geo_score: 45, key_factors: ['品牌权威性', '专业内容覆盖', '问答内容布局'] },
+  '母婴用品': { category_id: 'knowledge_gap', category_name: '知识盲区品类', category_icon: '🧠', benchmark_geo_score: 45, key_factors: ['品牌权威性', '专业内容覆盖', '问答内容布局'] },
+  '运动健身': { category_id: 'knowledge_gap', category_name: '知识盲区品类', category_icon: '🧠', benchmark_geo_score: 45, key_factors: ['品牌权威性', '专业内容覆盖', '问答内容布局'] },
+  '商业地产': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
+  '文旅': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
+  '装修建材': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
+  '婚纱摄影': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
+  '月子中心': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
+  '智能硬件': { category_id: 'innovation_niche', category_name: '长尾痛点微创新', category_icon: '🔍', benchmark_geo_score: 40, key_factors: ['产品差异化', '使用场景内容', '用户评测'] },
+  '个护创新': { category_id: 'innovation_niche', category_name: '长尾痛点微创新', category_icon: '🔍', benchmark_geo_score: 40, key_factors: ['产品差异化', '使用场景内容', '用户评测'] },
+  '小家电': { category_id: 'innovation_niche', category_name: '长尾痛点微创新', category_icon: '🔍', benchmark_geo_score: 40, key_factors: ['产品差异化', '使用场景内容', '用户评测'] },
+  'SaaS软件': { category_id: 'to_b_business', category_name: 'To B业务', category_icon: '🏢', benchmark_geo_score: 55, key_factors: ['行业解决方案', '客户案例', '技术文档', '专业资质'] },
+  '工业设备': { category_id: 'to_b_business', category_name: 'To B业务', category_icon: '🏢', benchmark_geo_score: 55, key_factors: ['行业解决方案', '客户案例', '技术文档', '专业资质'] },
+  '企业服务': { category_id: 'to_b_business', category_name: 'To B业务', category_icon: '🏢', benchmark_geo_score: 55, key_factors: ['行业解决方案', '客户案例', '技术文档', '专业资质'] }
+}
+
+const industryBenchmark = computed(() => {
+  if (!reportData.value?.industry) return null
+  return industryCategoryMap[reportData.value.industry] || {
+    category_id: 'general',
+    category_name: '通用行业',
+    category_icon: '📋',
+    benchmark_geo_score: 50,
+    key_factors: ['品牌认知', '内容质量', '用户口碑']
+  }
+})
+
 const isFullReport = computed(() => {
   return userStore.isPremium || reportData.value?._meta?.is_full_report
 })
@@ -137,6 +199,24 @@ const displayRecommendations = computed(() => {
   if (isFullReport.value) return reportData.value.recommendations
   return reportData.value.recommendations.slice(0, 3)
 })
+
+function getCompareClass() {
+  if (!industryBenchmark.value || !reportData.value) return ''
+  const diff = reportData.value.geo_score - industryBenchmark.value.benchmark_geo_score
+  if (diff >= 15) return 'result-excellent'
+  if (diff >= 5) return 'result-good'
+  if (diff >= -10) return 'result-average'
+  return 'result-poor'
+}
+
+function getCompareResult() {
+  if (!industryBenchmark.value || !reportData.value) return ''
+  const diff = reportData.value.geo_score - industryBenchmark.value.benchmark_geo_score
+  if (diff >= 15) return '🌟 领先行业水平'
+  if (diff >= 5) return '👍 高于行业平均'
+  if (diff >= -10) return '➡️ 接近行业平均'
+  return '📈 需重点提升'
+}
 
 onMounted(async () => {
   await loadReport()
@@ -392,6 +472,128 @@ function formatDate(dateStr) {
   margin-top: 2rem;
   padding-top: 2rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 行业对标样式 */
+.benchmark-section {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+}
+
+.benchmark-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.benchmark-category {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.category-icon {
+  font-size: 1.5rem;
+}
+
+.category-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+}
+
+.benchmark-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius);
+}
+
+.score-compare {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.compare-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.compare-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 0.25rem;
+}
+
+.compare-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.compare-value.user {
+  color: #D4AF37;
+}
+
+.compare-value.benchmark {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.compare-divider {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.875rem;
+}
+
+.compare-result {
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.result-excellent {
+  background: rgba(72, 187, 120, 0.2);
+  color: #48bb78;
+}
+
+.result-good {
+  background: rgba(72, 187, 120, 0.15);
+  color: #68d391;
+}
+
+.result-average {
+  background: rgba(212, 175, 55, 0.15);
+  color: #f6e05e;
+}
+
+.result-poor {
+  background: rgba(237, 137, 54, 0.2);
+  color: #ed8936;
+}
+
+.benchmark-factors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.factors-label {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.factor-tag {
+  padding: 0.25rem 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 @media (max-width: 768px) {

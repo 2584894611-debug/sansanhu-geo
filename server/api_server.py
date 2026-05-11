@@ -120,6 +120,21 @@ def init_database():
             )
         ''')
         
+        # 监测订阅表
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS monitor_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                brand TEXT NOT NULL,
+                frequency TEXT DEFAULT 'daily',
+                is_active INTEGER DEFAULT 1,
+                last_check_at TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(user_id, brand)
+            )
+        ''')
+        
         conn.commit()
         print("✅ 数据库初始化完成")
 
@@ -322,6 +337,266 @@ def get_recent_alerts(brand: str = None, limit: int = 10) -> List[Dict[str, Any]
             ''', (limit,))
         
         return [dict(row) for row in c.fetchall()]
+
+# ==================== 监测订阅管理 ====================
+def create_monitor_subscription(device_id: str, brand: str, frequency: str = 'daily') -> Dict[str, Any]:
+    """创建监测订阅"""
+    user = get_or_create_user(device_id)
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        
+        # 检查是否已存在
+        c.execute(
+            "SELECT * FROM monitor_subscriptions WHERE user_id = ? AND brand = ?",
+            (user["id"], brand)
+        )
+        existing = c.fetchone()
+        
+        if existing:
+            # 更新现有订阅
+            c.execute('''
+                UPDATE monitor_subscriptions 
+                SET frequency = ?, is_active = 1, last_check_at = ?
+                WHERE id = ?
+            ''', (frequency, datetime.now().isoformat(), existing["id"]))
+            conn.commit()
+            return dict(existing)
+        
+        # 创建新订阅
+        c.execute('''
+            INSERT INTO monitor_subscriptions (user_id, brand, frequency, is_active, last_check_at)
+            VALUES (?, ?, ?, 1, ?)
+        ''', (user["id"], brand, frequency, datetime.now().isoformat()))
+        conn.commit()
+        
+        return {
+            "id": c.lastrowid,
+            "brand": brand,
+            "frequency": frequency,
+            "is_active": 1
+        }
+
+def get_monitor_subscriptions(device_id: str) -> List[Dict[str, Any]]:
+    """获取用户的监测订阅列表"""
+    user = get_or_create_user(device_id)
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        
+        # 获取订阅列表
+        c.execute('''
+            SELECT ms.*, 
+                   (SELECT MAX(geo_score) FROM score_history WHERE brand = ms.brand) as current_score,
+                   (SELECT COUNT(*) FROM score_history WHERE brand = ms.brand) as data_points
+            FROM monitor_subscriptions ms
+            WHERE ms.user_id = ? AND ms.is_active = 1
+            ORDER BY ms.created_at DESC
+        ''', (user["id"],))
+        
+        subscriptions = [dict(row) for row in c.fetchall()]
+        
+        # 计算每个订阅的变化趋势
+        for sub in subscriptions:
+            # 获取最新两个评分
+            c.execute('''
+                SELECT geo_score FROM score_history 
+                WHERE brand = ? 
+                ORDER BY created_at DESC LIMIT 2
+            ''', (sub["brand"],))
+            scores = [row["geo_score"] for row in c.fetchall()]
+            
+            if len(scores) >= 2:
+                sub["trend"] = scores[0] - scores[1]
+                sub["change_percent"] = round((scores[0] - scores[1]) / max(scores[1], 1) * 100, 1) if scores[1] > 0 else 0
+            else:
+                sub["trend"] = 0
+                sub["change_percent"] = 0
+        
+        return subscriptions
+
+def delete_monitor_subscription(device_id: str, subscription_id: int) -> bool:
+    """删除监测订阅"""
+    user = get_or_create_user(device_id)
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            UPDATE monitor_subscriptions 
+            SET is_active = 0 
+            WHERE id = ? AND user_id = ?
+        ''', (subscription_id, user["id"]))
+        conn.commit()
+        return c.rowcount > 0
+
+def get_monitor_history(device_id: str, subscription_id: int, days: int = 30) -> List[Dict[str, Any]]:
+    """获取监测历史数据"""
+    user = get_or_create_user(device_id)
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        
+        # 获取订阅信息
+        c.execute('''
+            SELECT brand FROM monitor_subscriptions 
+            WHERE id = ? AND user_id = ?
+        ''', (subscription_id, user["id"]))
+        subscription = c.fetchone()
+        
+        if not subscription:
+            return []
+        
+        # 获取历史数据
+        c.execute('''
+            SELECT * FROM score_history 
+            WHERE brand = ? AND created_at >= datetime('now', '-' || ? || ' days')
+            ORDER BY created_at ASC
+        ''', (subscription["brand"], days))
+        
+        return [dict(row) for row in c.fetchall()]
+
+# ==================== 行业数据 ====================
+INDUSTRIES_DATA = {
+    "knowledge_gap": {
+        "name": "🧠 知识盲区品类",
+        "description": "用户认知有限，需要建立品牌认知",
+        "industries": [
+            {"id": "consumer_electronics", "name": "消费电子"},
+            {"id": "baby_products", "name": "母婴用品"},
+            {"id": "fitness", "name": "运动健身"}
+        ],
+        "benchmark_geo_score": 45,
+        "key_factors": ["品牌权威性", "专业内容覆盖", "问答内容布局"]
+    },
+    "high_value_low_freq": {
+        "name": "💰 低频高客单",
+        "description": "决策周期长，需要建立信任和专业形象",
+        "industries": [
+            {"id": "real_estate", "name": "商业地产"},
+            {"id": "tourism", "name": "文旅"},
+            {"id": "renovation", "name": "装修建材"},
+            {"id": "wedding", "name": "婚纱摄影"},
+            {"id": "postpartum", "name": "月子中心"}
+        ],
+        "benchmark_geo_score": 50,
+        "key_factors": ["口碑管理", "案例展示", "专业背书", "用户评价"]
+    },
+    "innovation_niche": {
+        "name": "🔍 长尾痛点微创新",
+        "description": "满足细分需求，需要突出差异化优势",
+        "industries": [
+            {"id": "smart_hardware", "name": "智能硬件"},
+            {"id": "personal_care", "name": "个护创新"},
+            {"id": "home_appliances", "name": "小家电"}
+        ],
+        "benchmark_geo_score": 40,
+        "key_factors": ["产品差异化", "使用场景内容", "用户评测"]
+    },
+    "to_b_business": {
+        "name": "🏢 To B业务",
+        "description": "面向企业客户，需要建立专业权威形象",
+        "industries": [
+            {"id": "saas", "name": "SaaS软件"},
+            {"id": "industrial", "name": "工业设备"},
+            {"id": "enterprise_service", "name": "企业服务"}
+        ],
+        "benchmark_geo_score": 55,
+        "key_factors": ["行业解决方案", "客户案例", "技术文档", "专业资质"]
+    }
+}
+
+def get_all_industries() -> List[Dict[str, Any]]:
+    """获取所有行业分类"""
+    result = []
+    for category_id, category_data in INDUSTRIES_DATA.items():
+        for industry in category_data["industries"]:
+            result.append({
+                "category_id": category_id,
+                "category_name": category_data["name"],
+                "category_description": category_data["description"],
+                "id": industry["id"],
+                "name": industry["name"],
+                "benchmark_geo_score": category_data["benchmark_geo_score"],
+                "key_factors": category_data["key_factors"]
+            })
+    return result
+
+def get_industry_by_id(industry_id: str) -> Optional[Dict[str, Any]]:
+    """根据ID获取行业详情"""
+    for category_id, category_data in INDUSTRIES_DATA.items():
+        for industry in category_data["industries"]:
+            if industry["id"] == industry_id:
+                return {
+                    "category_id": category_id,
+                    "category_name": category_data["name"],
+                    "category_description": category_data["description"],
+                    "id": industry["id"],
+                    "name": industry["name"],
+                    "benchmark_geo_score": category_data["benchmark_geo_score"],
+                    "key_factors": category_data["key_factors"]
+                }
+    return None
+
+def get_industry_benchmarks(industry_id: str) -> Dict[str, Any]:
+    """获取行业基准数据"""
+    industry = get_industry_by_id(industry_id)
+    if not industry:
+        return {}
+    
+    # 生成行业基准数据
+    benchmark = {
+        "industry": industry,
+        "benchmarks": {
+            "geo_score": {
+                "excellent": industry["benchmark_geo_score"] + 20,
+                "good": industry["benchmark_geo_score"] + 10,
+                "average": industry["benchmark_geo_score"],
+                "poor": industry["benchmark_geo_score"] - 15
+            },
+            "visibility": {
+                "excellent": 85,
+                "good": 70,
+                "average": 55,
+                "poor": 40
+            },
+            "recommendation": {
+                "excellent": 80,
+                "good": 65,
+                "average": 50,
+                "poor": 35
+            },
+            "sentiment": {
+                "excellent": 85,
+                "good": 70,
+                "average": 60,
+                "poor": 45
+            }
+        },
+        "recommendations_by_level": {
+            "excellent": [
+                "继续保持内容输出节奏",
+                "关注新兴AI搜索平台动态",
+                "深化行业垂直内容布局"
+            ],
+            "good": [
+                "加强竞品对比内容建设",
+                "提升问答类内容覆盖",
+                "优化品牌故事叙事结构"
+            ],
+            "average": [
+                "增加专业权威内容发布频率",
+                "建立品牌FAQ知识库",
+                "布局长尾关键词内容"
+            ],
+            "poor": [
+                "优先解决基础品牌信息覆盖",
+                "创建品牌百科类内容",
+                "加强用户评价管理"
+            ]
+        }
+    }
+    
+    return benchmark
 
 # ==================== FastAPI 应用 ====================
 app = FastAPI(
@@ -619,6 +894,70 @@ async def get_alerts(brand: str = Query(default=None), limit: int = Query(defaul
     alerts = get_recent_alerts(brand, limit)
     return {"success": True, "data": alerts}
 
+# ==================== 监测订阅 API ====================
+class MonitorCreateRequest(BaseModel):
+    """创建监测订阅请求"""
+    brand: str = Field(..., description="品牌名称")
+    frequency: str = Field(default="daily", description="监测频率: daily/weekly")
+
+@app.post("/api/monitor")
+async def create_monitor(
+    request: MonitorCreateRequest,
+    device_id: str = Query(default="default")
+):
+    """创建监测订阅"""
+    if not request.brand or len(request.brand.strip()) < 2:
+        raise HTTPException(status_code=400, detail="品牌名称不能少于2个字符")
+    
+    if request.frequency not in ["daily", "weekly"]:
+        raise HTTPException(status_code=400, detail="无效的监测频率")
+    
+    subscription = create_monitor_subscription(device_id, request.brand.strip(), request.frequency)
+    return {"success": True, "data": subscription}
+
+@app.get("/api/monitor")
+async def get_monitors(device_id: str = Query(default="default")):
+    """获取监测订阅列表"""
+    subscriptions = get_monitor_subscriptions(device_id)
+    return {"success": True, "data": subscriptions}
+
+@app.get("/api/monitor/{subscription_id}/history")
+async def get_monitor_history_api(
+    subscription_id: int,
+    days: int = Query(default=30),
+    device_id: str = Query(default="default")
+):
+    """获取监测历史数据"""
+    history = get_monitor_history(device_id, subscription_id, days)
+    return {"success": True, "data": history}
+
+@app.delete("/api/monitor/{subscription_id}")
+async def delete_monitor(
+    subscription_id: int,
+    device_id: str = Query(default="default")
+):
+    """删除监测订阅"""
+    success = delete_monitor_subscription(device_id, subscription_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="监测订阅不存在")
+    return {"success": True, "message": "监测订阅已删除"}
+
+# ==================== 行业 API ====================
+@app.get("/api/industries")
+async def get_industries():
+    """获取所有行业列表"""
+    industries = get_all_industries()
+    return {"success": True, "data": industries}
+
+@app.get("/api/industries/benchmarks/{industry_id}")
+async def get_industry_benchmarks_api(industry_id: str):
+    """获取行业基准数据"""
+    benchmark = get_industry_benchmarks(industry_id)
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="行业不存在")
+    return {"success": True, "data": benchmark}
+
+# ==================== 分析 API ====================
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
     """核心分析接口"""
