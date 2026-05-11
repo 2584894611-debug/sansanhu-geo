@@ -1,0 +1,298 @@
+/* geo-insight/pages/aiSearch/aiSearch.wxss */
+
+.container {
+  padding: 20rpx;
+  background: #f5f5f5;
+  min-height: 100vh;
+}
+
+.header {
+  text-align: center;
+  padding: 40rpx 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  margin-bottom: 30rpx;
+}
+
+.title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: bold;
+  color: white;
+}
+
+.subtitle {
+  display: block;
+  font-size: 26rpx;
+  color: rgba(255,255,255,0.9);
+  margin-top: 10rpx;
+}
+
+.input-section {
+  background: white;
+  border-radius: 12px;
+  padding: 30rpx;
+  margin-bottom: 30rpx;
+}
+
+.input-item {
+  margin-bottom: 30rpx;
+}
+
+.label {
+  display: block;
+  font-size: 28rpx;
+  color: #333;
+  font-weight: 500;
+  margin-bottom: 15rpx;
+}
+
+.input {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 20rpx;
+  font-size: 28rpx;
+}
+
+.textarea {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 20rpx;
+  font-size: 28rpx;
+  min-height: 120rpx;
+  width: 100%;
+}
+
+.checkbox-item {
+  display: inline-block;
+  margin-right: 30rpx;
+  margin-bottom: 15rpx;
+}
+
+.analyze-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 25px;
+  padding: 25rpx 0;
+  font-size: 32rpx;
+  margin-top: 20rpx;
+}
+
+.result-section {
+  margin-top: 30rpx;
+}
+
+.query-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 25rpx 30rpx;
+  border-radius: 12px;
+  margin-bottom: 30rpx;
+}
+
+.query-label {
+  font-size: 26rpx;
+  opacity: 0.9;
+}
+
+.query-value {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-left: 10rpx;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 25rpx;
+  margin-bottom: 20rpx;
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 20rpx;
+  padding-bottom: 15rpx;
+  border-bottom: 2px solid #667eea;
+}
+
+.brand-list {
+  margin-top: 15rpx;
+}
+
+.brand-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.brand-item:last-child {
+  border-bottom: none;
+}
+
+.brand-rank {
+  width: 50rpx;
+  height: 50rpx;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  margin-right: 20rpx;
+}
+
+.brand-info {
+  flex: 1;
+}
+
+.brand-name {
+  display: block;
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+.brand-platforms {
+  display: block;
+  font-size: 22rpx;
+  color: #888;
+  margin-top: 5rpx;
+}
+
+.brand-score {
+  text-align: right;
+}
+
+.score-value {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #667eea;
+}
+
+.score-label {
+  font-size: 24rpx;
+  color: #888;
+  margin-left: 5rpx;
+}
+
+.logic-section {
+  margin-bottom: 20rpx;
+}
+
+.logic-title {
+  font-size: 26rpx;
+  color: #666;
+  margin-bottom: 15rpx;
+  display: block;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.tag {
+  background: #f0f0f0;
+  color: #666;
+  padding: 10rpx 20rpx;
+  border-radius: 20px;
+  font-size: 24rpx;
+  margin-right: 15rpx;
+  margin-bottom: 15rpx;
+}
+
+.tag.primary {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+.insights-card {
+  background: linear-gradient(135deg, #fff7e6 0%, #fff1e6 100%);
+}
+
+.insight-list {
+  margin-top: 15rpx;
+}
+
+.insight-item {
+  padding: 15rpx 0;
+  border-bottom: 1px dashed #ffe7ba;
+}
+
+.insight-item:last-child {
+  border-bottom: none;
+}
+
+.insight-type {
+  display: inline-block;
+  background: #fa8c16;
+  color: white;
+  padding: 5rpx 15rpx;
+  border-radius: 8px;
+  font-size: 22rpx;
+  margin-right: 15rpx;
+}
+
+.insight-content {
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.6;
+}
+
+.platform-list {
+  margin-top: 15rpx;
+}
+
+.platform-item {
+  background: #f8f9fa;
+  padding: 20rpx;
+  border-radius: 8px;
+  margin-bottom: 15rpx;
+}
+
+.platform-item:last-child {
+  margin-bottom: 0;
+}
+
+.platform-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10rpx;
+}
+
+.platform-name {
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+.platform-status {
+  font-size: 22rpx;
+  padding: 5rpx 15rpx;
+  border-radius: 20px;
+}
+
+.platform-status.success {
+  background: #d9f7be;
+  color: #52c41a;
+}
+
+.platform-status.failed {
+  background: #fff1f0;
+  color: #ff4d4f;
+}
+
+.platform-content {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.platform-error {
+  font-size: 24rpx;
+  color: #ff4d4f;
+}

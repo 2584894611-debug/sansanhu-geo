@@ -1,0 +1,114 @@
+<!-- geo-insight/pages/analyze/analyze.wxml -->
+<view class="container">
+  <!-- 标题 -->
+  <view class="header">
+    <text class="title">好易易GEO</text>
+    <text class="subtitle">AI搜索竞品分析工具</text>
+  </view>
+
+  <!-- 输入区域 -->
+  <view class="input-section">
+    <!-- 品牌名称 -->
+    <view class="input-item">
+      <text class="label">品牌名称 *</text>
+      <input 
+        class="input" 
+        placeholder="输入要分析的品牌名称"
+        value="{{brandName}}"
+        bindinput="onBrandInput"
+      />
+    </view>
+
+    <!-- 竞品列表 -->
+    <view class="input-item">
+      <text class="label">竞品（可选）</text>
+      <textarea 
+        class="textarea" 
+        placeholder="输入竞品名称，多个用逗号或换行分隔"
+        value="{{competitors}}"
+        bindinput="onCompetitorsInput"
+      />
+    </view>
+
+    <!-- 平台选择 -->
+    <view class="input-item">
+      <text class="label">目标平台</text>
+      <checkbox-group bindchange="onPlatformChange">
+        <label class="checkbox-item" wx:for="{{platforms}}" wx:key="id">
+          <checkbox value="{{item.id}}" checked="{{item.checked}}" />
+          <text>{{item.name}}</text>
+        </label>
+      </checkbox-group>
+    </view>
+
+    <!-- 分析按钮 -->
+    <button 
+      class="analyze-btn" 
+      bindtap="startAnalyze"
+      disabled="{{analyzing}}"
+    >
+      <text wx:if="{{!analyzing}}">开始分析</text>
+      <text wx:else>分析中...</text>
+    </button>
+  </view>
+
+  <!-- 结果展示 -->
+  <view class="result-section" wx:if="{{results}}">
+    <view class="section-title">分析结果</view>
+    
+    <!-- 平台结果 -->
+    <view class="platform-results">
+      <view class="platform-card" wx:for="{{results.platforms}}" wx:key="platform">
+        <view class="platform-header">
+          <text class="platform-name">{{item.platformName}}</text>
+          <text class="platform-status {{item.success ? 'success' : 'failed'}}">
+            {{item.success ? '成功' : '失败'}}
+          </text>
+        </view>
+        <view class="platform-content" wx:if="{{item.success}}">
+          <view class="result-item">
+            <text class="result-label">推荐品牌：</text>
+            <text class="result-value">{{item.data.recommended_brands.join('、')}}</text>
+          </view>
+          <view class="result-item">
+            <text class="result-label">置信度：</text>
+            <text class="result-value">{{(item.data.confidence * 100).toFixed(0)}}%</text>
+          </view>
+        </view>
+        <view class="error-msg" wx:else>{{item.error}}</view>
+      </view>
+    </view>
+
+    <!-- 排名 -->
+    <view class="ranking-section">
+      <view class="section-title">品牌排名</view>
+      <view class="ranking-list">
+        <view class="ranking-item" wx:for="{{results.report.ranking}}" wx:key="brand">
+          <text class="rank-num">{{index + 1}}</text>
+          <text class="brand-name">{{item.brand}}</text>
+          <text class="platform-count">被{{item.platforms}}个平台推荐</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 建议 -->
+    <view class="suggestions-section">
+      <view class="section-title">优化建议</view>
+      <view class="suggestion-item" wx:for="{{results.report.recommendations}}" wx:key="type">
+        <view class="suggestion-header">
+          <text class="priority {{item.priority}}">{{item.priority === 'HIGH' ? '高优' : '中优'}}</text>
+          <text class="suggestion-type">{{item.type}}</text>
+        </view>
+        <text class="suggestion-content">{{item.content}}</text>
+      </view>
+    </view>
+
+    <!-- 报告按钮 -->
+    <view class="report-actions">
+      <button class="report-btn" bindtap="generateReport">生成报告</button>
+      <button class="download-btn" bindtap="downloadReport" wx:if="{{reportUrl}}">
+        下载报告
+      </button>
+    </view>
+  </view>
+</view>

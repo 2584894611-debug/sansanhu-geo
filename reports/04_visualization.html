@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>武汉万象城 GEO分析可视化</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; margin: 0; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 20px; }
+        .header h1 { margin: 0 0 10px 0; font-size: 28px; }
+        .header p { margin: 0; opacity: 0.9; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        .card h3 { margin: 0 0 15px 0; color: #333; font-size: 16px; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+        .chart { width: 100%; height: 300px; }
+        .metrics { display: flex; gap: 15px; flex-wrap: wrap; }
+        .metric { background: linear-gradient(135deg, #667eea22, #764ba222); padding: 15px 25px; border-radius: 10px; text-align: center; flex: 1; min-width: 120px; }
+        .metric-value { font-size: 32px; font-weight: bold; color: #667eea; }
+        .metric-label { color: #666; font-size: 14px; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 武汉万象城 GEO分析报告</h1>
+        <p>行业: 商业地产/本地生活 | 分析时间: 2026-05-09 12:09:16</p>
+    </div>
+    
+    <div class="metrics">
+        <div class="metric"><div class="metric-value">75</div><div class="metric-label">GEO评分</div></div>
+        <div class="metric"><div class="metric-value">70</div><div class="metric-label">可见度</div></div>
+        <div class="metric"><div class="metric-value">72</div><div class="metric-label">推荐度</div></div>
+        <div class="metric"><div class="metric-value">69</div><div class="metric-label">采集数据</div></div>
+    </div>
+    
+    <div class="grid" style="margin-top: 20px;">
+        <div class="card"><h3>📡 AI平台覆盖分布</h3><div id="platformChart" class="chart"></div></div>
+        <div class="card"><h3>😊 情感倾向分析</h3><div id="sentimentChart" class="chart"></div></div>
+        <div class="card"><h3>📈 三维度评分</h3><div id="dimensionChart" class="chart"></div></div>
+        <div class="card"><h3>🏢 竞品对比</h3><div id="competitorChart" class="chart"></div></div>
+    </div>
+    
+    <script>
+        var platformNames = ["\u8c46\u5305", "DeepSeek", "\u5143\u5b9d", "Kimi", "\u901a\u4e49\u5343\u95ee", "\u667a\u8c31"];
+        var platformValues = [13, 11, 10, 10, 11, 14];
+        var competitorsData = [{"name": "武汉恒隆广场", "geo_score": 78}, {"name": "武汉国际广场", "geo_score": 72}];
+        
+        var platformChart = echarts.init(document.getElementById('platformChart'));
+        platformChart.setOption({
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            xAxis: { type: 'category', data: platformNames, axisLabel: { rotate: 30 } },
+            yAxis: { type: 'value', name: '提及次数' },
+            series: [{ type: 'bar', data: platformValues, itemStyle: { borderRadius: [5, 5, 0, 0], color: '#667eea' } }]
+        });
+        
+        var sentimentChart = echarts.init(document.getElementById('sentimentChart'));
+        sentimentChart.setOption({
+            tooltip: { trigger: 'item' },
+            legend: { bottom: 0 },
+            series: [{ type: 'pie', radius: ['40%', '70%'], label: { show: true, formatter: '{b}: {c}%' },
+                data: [
+                    { value: 65, name: '正面', itemStyle: {color: '#91cc75'} },
+                    { value: 25, name: '中性', itemStyle: {color: '#fac858'} },
+                    { value: 10, name: '负面', itemStyle: {color: '#ee6666'} }
+                ]}]
+        });
+        
+        var dimensionChart = echarts.init(document.getElementById('dimensionChart'));
+        dimensionChart.setOption({
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            xAxis: { type: 'category', data: ['GEO评分', '可见度', '推荐度'] },
+            yAxis: { type: 'value', max: 100 },
+            series: [{ type: 'bar', barWidth: '50%', itemStyle: { borderRadius: [5, 5, 0, 0] },
+                data: [
+                    { value: 75, itemStyle: { color: '#667eea' } },
+                    { value: 70, itemStyle: { color: '#f5576c' } },
+                    { value: 72, itemStyle: { color: '#4facfe' } }
+                ]}]
+        });
+        
+        var competitorList = [{ name: "武汉万象城", score: 75 }];
+        competitorsData.forEach(function(c) { competitorList.push({ name: c.name, score: c.geo_score }); });
+        competitorList.sort(function(a, b) { return b.score - a.score; });
+        
+        var competitorChart = echarts.init(document.getElementById('competitorChart'));
+        competitorChart.setOption({
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            xAxis: { type: 'value', max: 100 },
+            yAxis: { type: 'category', data: competitorList.map(function(d) { return d.name; }) },
+            series: [{ type: 'bar', data: competitorList.map(function(d) { 
+                return { value: d.score, itemStyle: { color: d.name === "武汉万象城" ? '#667eea' : '#91cc75' } };
+            })}]
+        });
+        
+        window.addEventListener('resize', function() { platformChart.resize(); sentimentChart.resize(); dimensionChart.resize(); competitorChart.resize(); });
+    </script>
+</body>
+</html>

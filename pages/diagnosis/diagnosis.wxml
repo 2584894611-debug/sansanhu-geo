@@ -1,0 +1,108 @@
+<!-- geo-insight/pages/diagnosis/diagnosis.wxml -->
+<view class="container">
+  <!-- 标题 -->
+  <view class="header">
+    <text class="title">🏥 品牌健康诊断</text>
+    <text class="subtitle">分析品牌在AI搜索中的表现</text>
+  </view>
+
+  <!-- 输入区域 -->
+  <view class="input-section">
+    <view class="input-item">
+      <text class="label">品牌名称 *</text>
+      <input class="input" placeholder="输入品牌名称" value="{{brandName}}" bindinput="onBrandInput" />
+    </view>
+
+    <view class="input-item">
+      <text class="label">所属行业</text>
+      <input class="input" placeholder="如：电商、教育、本地生活" value="{{industry}}" bindinput="onIndustryInput" />
+    </view>
+
+    <view class="input-item">
+      <text class="label">监测关键词</text>
+      <textarea class="textarea" placeholder="输入要监测的关键词，多个用逗号分隔" value="{{keywords}}" bindinput="onKeywordsInput" />
+    </view>
+
+    <view class="input-item">
+      <text class="label">诊断平台</text>
+      <checkbox-group bindchange="onPlatformChange">
+        <label class="checkbox-item" wx:for="{{platforms}}" wx:key="id">
+          <checkbox value="{{item.id}}" checked="{{item.checked}}" />
+          <text>{{item.name}}</text>
+        </label>
+      </checkbox-group>
+    </view>
+
+    <button class="diagnose-btn" bindtap="startDiagnosis" disabled="{{diagnosing}}">
+      <text wx:if="{{!diagnosing}}">开始诊断</text>
+      <text wx:else>诊断中...</text>
+    </button>
+  </view>
+
+  <!-- 健康评分 -->
+  <view class="score-section" wx:if="{{healthScore}}">
+    <view class="score-card">
+      <view class="score-circle" style="border-color: {{getScoreColor(getScoreLevel(healthScore.totalScore))}}">
+        <text class="score-level">{{healthScore.level}}</text>
+        <text class="score-value">{{healthScore.totalScore}}</text>
+      </view>
+      <view class="score-title">GEO健康评分</view>
+    </view>
+
+    <view class="score-breakdown">
+      <view class="breakdown-item">
+        <text class="breakdown-label">平台推荐</text>
+        <text class="breakdown-value">{{healthScore.breakdown.platformScore}}</text>
+      </view>
+      <view class="breakdown-item">
+        <text class="breakdown-label">关键词覆盖</text>
+        <text class="breakdown-value">{{healthScore.breakdown.keywordScore}}</text>
+      </view>
+      <view class="breakdown-item">
+        <text class="breakdown-label">推荐指数</text>
+        <text class="breakdown-value">{{healthScore.breakdown.recommendationScore}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 平台结果 -->
+  <view class="result-section" wx:if="{{result}}">
+    <view class="section-title">📊 平台诊断详情</view>
+    <view class="platform-list">
+      <view class="platform-item" wx:for="{{result.platformResults}}" wx:key="platform">
+        <view class="platform-header">
+          <text class="platform-name">{{item.platformName}}</text>
+          <text class="platform-badge {{item.isRecommended ? 'recommended' : 'not-recommended'}}">
+            {{item.isRecommended ? '已被推荐' : '未推荐'}}
+          </text>
+        </view>
+        <view class="platform-info">
+          <text>推荐指数：{{item.recommendationIndex || 0}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 关键词覆盖 -->
+    <view class="section-title" wx:if="{{result.keywordCoverage.length > 0}}">
+      🔑 关键词覆盖
+    </view>
+    <view class="keyword-list" wx:if="{{result.keywordCoverage.length > 0}}">
+      <view class="keyword-item" wx:for="{{result.keywordCoverage}}" wx:key="keyword">
+        <text class="keyword-name">{{item.keyword}}</text>
+        <text class="keyword-rate">{{(item.coverageRate * 100).toFixed(0)}}%</text>
+      </view>
+    </view>
+
+    <!-- 优化建议 -->
+    <view class="section-title">💡 优化建议</view>
+    <view class="suggestion-list">
+      <view class="suggestion-item" wx:for="{{result.diagnosis}}" wx:key="type">
+        <view class="suggestion-header">
+          <text class="priority {{item.priority}}">{{item.priority === 'HIGH' ? '高' : item.priority === 'MEDIUM' ? '中' : '低'}}</text>
+          <text class="suggestion-type">{{item.type}}</text>
+        </view>
+        <text class="suggestion-content">{{item.content}}</text>
+      </view>
+    </view>
+  </view>
+</view>

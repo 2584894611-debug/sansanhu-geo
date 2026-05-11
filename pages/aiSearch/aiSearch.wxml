@@ -1,0 +1,121 @@
+<!-- geo-insight/pages/aiSearch/aiSearch.wxml -->
+<view class="container">
+  <!-- 标题 -->
+  <view class="header">
+    <text class="title">🔍 AI搜索推荐分析</text>
+    <text class="subtitle">洞察AI平台的品牌推荐逻辑</text>
+  </view>
+
+  <!-- 输入区域 -->
+  <view class="input-section">
+    <view class="input-item">
+      <text class="label">搜索词 *</text>
+      <input class="input" placeholder="输入要分析的搜索词，如：电动牙刷推荐" value="{{query}}" bindinput="onQueryInput" />
+    </view>
+
+    <view class="input-item">
+      <text class="label">所属行业</text>
+      <input class="input" placeholder="如：消费电子、美妆护肤" value="{{category}}" bindinput="onCategoryInput" />
+    </view>
+
+    <view class="input-item">
+      <text class="label">关注竞品（可选）</text>
+      <textarea class="textarea" placeholder="输入要关注的竞品名称" value="{{competitors}}" bindinput="onCompetitorsInput" />
+    </view>
+
+    <view class="input-item">
+      <text class="label">分析平台</text>
+      <checkbox-group bindchange="onPlatformChange">
+        <label class="checkbox-item" wx:for="{{platforms}}" wx:key="id">
+          <checkbox value="{{item.id}}" checked="{{item.checked}}" />
+          <text>{{item.name}}</text>
+        </label>
+      </checkbox-group>
+    </view>
+
+    <button class="analyze-btn" bindtap="startAnalysis" disabled="{{analyzing}}">
+      <text wx:if="{{!analyzing}}">开始分析</text>
+      <text wx:else>分析中...</text>
+    </button>
+  </view>
+
+  <!-- 结果展示 -->
+  <view class="result-section" wx:if="{{result}}">
+    <!-- 查询词 -->
+    <view class="query-card">
+      <text class="query-label">分析词：</text>
+      <text class="query-value">{{result.query}}</text>
+    </view>
+
+    <!-- 品牌推荐排名 -->
+    <view class="card">
+      <view class="card-title">🏆 AI推荐品牌排名</view>
+      <view class="brand-list">
+        <view class="brand-item" wx:for="{{result.brandRecommendations}}" wx:key="brand">
+          <view class="brand-rank">{{index + 1}}</view>
+          <view class="brand-info">
+            <text class="brand-name">{{item.brand}}</text>
+            <text class="brand-platforms">覆盖：{{item.platforms.join('、')}}</text>
+          </view>
+          <view class="brand-score">
+            <text class="score-value">{{item.avgScore}}</text>
+            <text class="score-label">分</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 推荐逻辑 -->
+    <view class="card">
+      <view class="card-title">🧠 AI推荐逻辑分析</view>
+      
+      <view class="logic-section">
+        <text class="logic-title">高频推荐模式：</text>
+        <view class="tag-list">
+          <text class="tag" wx:for="{{result.recommendationLogic.top_patterns}}" wx:key="pattern">
+            {{item.pattern}} ({{item.count}})
+          </text>
+        </view>
+      </view>
+
+      <view class="logic-section">
+        <text class="logic-title">关键影响因素：</text>
+        <view class="tag-list">
+          <text class="tag primary" wx:for="{{result.recommendationLogic.top_factors}}" wx:key="factor">
+            {{item.factor}} ({{item.count}})
+          </text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 洞察报告 -->
+    <view class="card insights-card">
+      <view class="card-title">💡 GEO洞察建议</view>
+      <view class="insight-list">
+        <view class="insight-item" wx:for="{{result.insights}}" wx:key="type">
+          <text class="insight-type">{{item.type}}</text>
+          <text class="insight-content">{{item.content}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 平台详情 -->
+    <view class="card">
+      <view class="card-title">📊 各平台详情</view>
+      <view class="platform-list">
+        <view class="platform-item" wx:for="{{result.platformResults}}" wx:key="platform">
+          <view class="platform-header">
+            <text class="platform-name">{{item.platformName}}</text>
+            <text class="platform-status {{item.success ? 'success' : 'failed'}}">
+              {{item.success ? '成功' : '失败'}}
+            </text>
+          </view>
+          <view class="platform-content" wx:if="{{item.success}}">
+            <text class="platform-reasons">{{item.reasons.join('、')}}</text>
+          </view>
+          <view class="platform-error" wx:else>{{item.error}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

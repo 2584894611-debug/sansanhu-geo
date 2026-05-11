@@ -1,0 +1,90 @@
+{
+  "test_time": "2026-05-09T12:07:58.444908",
+  "brand": "武汉万象城",
+  "industry": "商业地产/本地生活",
+  "steps": {
+    "data_collection": {
+      "status": "success",
+      "duration": 14.91911268234253,
+      "results": 69
+    },
+    "ai_analysis": {
+      "status": "success",
+      "duration": 7.354562520980835
+    },
+    "report_generation": {
+      "status": "success",
+      "duration": 0.06765055656433105
+    }
+  },
+  "total_duration": 22.341325759887695,
+  "brand_data": {
+    "brand_name": "武汉万象城",
+    "industry": "商业地产/本地生活",
+    "geo_score": 75,
+    "visibility": 70,
+    "recommendation": 72,
+    "sentiment": {
+      "positive": 65,
+      "neutral": 25,
+      "negative": 10
+    },
+    "mentions": "中频",
+    "competitors": [
+      {
+        "name": "武汉恒隆广场",
+        "geo_score": 78
+      },
+      {
+        "name": "武汉国际广场",
+        "geo_score": 72
+      }
+    ],
+    "recommendations": [
+      {
+        "title": "强化AI搜索中的本地化关键词（如“武汉潮人打卡地”）",
+        "priority": "high",
+        "difficulty": "medium"
+      },
+      {
+        "title": "增加用户生成内容（UGC）在豆包等平台的互动推荐",
+        "priority": "medium",
+        "difficulty": "easy"
+      },
+      {
+        "title": "优化小红书、抖音等平台的结构化数据，提升在DeepSeek中的摘要展示",
+        "priority": "high",
+        "difficulty": "hard"
+      }
+    ],
+    "key_features": [
+      "高端商业综合体",
+      "多元化餐饮体验",
+      "艺术文化空间"
+    ],
+    "advantages": [
+      {
+        "title": "品牌定位高端",
+        "description": "武汉万象城定位为高端商业综合体，吸引高消费人群，在AI搜索中常与“品质生活”关联。"
+      },
+      {
+        "title": "文化艺术氛围",
+        "description": "拥有独特的艺术展览和公共空间，增强品牌辨识度，在生成式回答中常被提及为“打卡地”。"
+      }
+    ],
+    "weaknesses": [
+      {
+        "title": "区域竞争激烈",
+        "description": "与恒隆广场、国际广场等高端商场直接竞争，AI搜索中品牌提及频率不占绝对优势。"
+      },
+      {
+        "title": "线上内容覆盖不足",
+        "description": "在豆包、DeepSeek等平台的用户生成内容（UGC）和结构化数据较少，影响推荐算法中的可见性。"
+      }
+    ],
+    "platform_performance": {
+      "豆包": "武汉万象城在豆包中的提及以正面评价为主，常被推荐为“武汉必逛商场”，但内容多为官方宣传，用户原创内容（UGC）占比偏低。",
+      "DeepSeek": "在DeepSeek中，武汉万象城被归类为“高端购物中心”，与恒隆广场并列推荐，但缺乏深度解析或用户故事，导致推荐权重略低于竞品。"
+    }
+  }
+}

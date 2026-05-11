@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>武汉国际广场 GEO分析报告</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: #f5f5f5; padding: 15px; color: #333; line-height: 1.8; }
+  .container { max-width: 680px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+  
+  /* 头部 */
+  .header { background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%); color: #fff; padding: 40px 30px; text-align: center; }
+  .header h1 { font-size: 26px; margin-bottom: 10px; font-weight: 600; }
+  .header .subtitle { font-size: 14px; opacity: 0.85; }
+  .header .date { font-size: 12px; opacity: 0.7; margin-top: 8px; }
+  
+  /* 摘要卡片 */
+  .summary { padding: 25px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+  .summary h2 { font-size: 18px; color: #1a365d; margin-bottom: 15px; border-left: 4px solid #2c5282; padding-left: 12px; }
+  .score-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .score-card { background: #fff; border-radius: 10px; padding: 15px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .score-card .num { font-size: 32px; font-weight: 700; color: #ed8936; }
+  .score-card .label { font-size: 12px; color: #666; margin-top: 4px; }
+  .score-card .desc { font-size: 11px; color: #999; }
+  
+  /* 亮点 */
+  .highlight-box { background: #fff; border-radius: 10px; padding: 18px; margin-top: 15px; }
+  .highlight-box .tag { display: inline-block; background: #48bb78; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 8px; }
+  .highlight-box .tag.warning { background: #ed8936; }
+  .highlight-item { padding: 8px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
+  .highlight-item:last-child { border-bottom: none; }
+  
+  /* 竞品 */
+  .rank-section { padding: 25px; }
+  .rank-section h2 { font-size: 18px; color: #1a365d; margin-bottom: 15px; border-left: 4px solid #2c5282; padding-left: 12px; }
+  .rank-table { width: 100%; border-collapse: collapse; }
+  .rank-table th { background: #1a365d; color: #fff; padding: 12px 15px; text-align: left; font-size: 14px; }
+  .rank-table td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 14px; }
+  .rank-table tr:nth-child(even) { background: #f8fafc; }
+  .rank-table .highlight { background: #fff5f5 !important; font-weight: 600; color: #c53030; }
+  .medal { font-size: 18px; }
+  
+  /* Prompt分析 */
+  .prompt-section { padding: 25px; background: #f8fafc; }
+  .prompt-section h2 { font-size: 18px; color: #1a365d; margin-bottom: 15px; border-left: 4px solid #2c5282; padding-left: 12px; }
+  .prompt-chart { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 15px; }
+  .prompt-bar { display: flex; align-items: center; margin: 10px 0; }
+  .prompt-bar .type { width: 80px; font-size: 13px; color: #666; }
+  .prompt-bar .bar-bg { flex: 1; height: 20px; background: #e2e8f0; border-radius: 10px; overflow: hidden; }
+  .prompt-bar .bar-fill { height: 100%; background: linear-gradient(90deg, #ed8936, #c05621); border-radius: 10px; }
+  .prompt-bar .percent { width: 50px; text-align: right; font-size: 13px; color: #c05621; font-weight: 600; }
+  
+  /* 建议 */
+  .suggest-section { padding: 25px; }
+  .suggest-section h2 { font-size: 18px; color: #1a365d; margin-bottom: 15px; border-left: 4px solid #2c5282; padding-left: 12px; }
+  .suggest-card { background: #fff; border-radius: 10px; padding: 18px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .suggest-card .priority { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 8px; }
+  .suggest-card .priority.high { background: #fed7d7; color: #c53030; }
+  .suggest-card .priority.medium { background: #feebc8; color: #c05621; }
+  .suggest-card .title { font-size: 15px; font-weight: 600; color: #333; margin: 8px 0; }
+  .suggest-card .desc { font-size: 13px; color: #666; line-height: 1.6; }
+  
+  /* 底部 */
+  .footer { background: #1a365d; color: #fff; padding: 30px; text-align: center; }
+  .footer .brand { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
+  .footer .contact { font-size: 14px; opacity: 0.9; }
+  .footer .tip { font-size: 12px; opacity: 0.6; margin-top: 15px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- 头部 -->
+<div class="header">
+  <h1>🏬 武汉国际广场 GEO分析报告</h1>
+  <div class="subtitle">商业地产 · AI搜索表现诊断</div>
+  <div class="date">报告日期：2026年05月09日</div>
+</div>
+
+<!-- 摘要 -->
+<div class="summary">
+  <h2>📊 执行摘要</h2>
+  <div class="score-grid">
+    <div class="score-card">
+      <div class="num">68</div>
+      <div class="label">GEO健康评分</div>
+      <div class="desc">⭐⭐ C级</div>
+    </div>
+    <div class="score-card">
+      <div class="num">72</div>
+      <div class="label">可见度评分</div>
+      <div class="desc">🟡 良好</div>
+    </div>
+    <div class="score-card">
+      <div class="num">65</div>
+      <div class="label">推荐度评分</div>
+      <div class="desc">🟠 一般</div>
+    </div>
+    <div class="score-card">
+      <div class="num">58%</div>
+      <div class="label">正面评价</div>
+      <div class="desc">🟠 有提升空间</div>
+    </div>
+  </div>
+  
+  <div class="highlight-box">
+    <span class="tag">核心优势</span>
+    <div class="highlight-item">✅ 武汉老牌高端商业地标</div>
+    <div class="highlight-item">✅ 武商集团核心旗舰项目</div>
+    <div class="highlight-item">✅ 奢侈品品牌资源丰富</div>
+  </div>
+  <div class="highlight-box" style="margin-top:10px;">
+    <span class="tag warning">主要挑战</span>
+    <div class="highlight-item">⚠️ 数字化内容布局不足</div>
+    <div class="highlight-item">⚠️ 与新兴竞品差异化定位模糊</div>
+    <div class="highlight-item">⚠️ 场景化内容输出较少</div>
+  </div>
+</div>
+
+<!-- 竞品排名 -->
+<div class="rank-section">
+  <h2>🏢 行业排名</h2>
+  <table class="rank-table">
+    <thead>
+      <tr>
+        <th>排名</th>
+        <th>品牌</th>
+        <th>GEO评分</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="medal">🥇</span></td>
+        <td>武汉恒隆广场</td>
+        <td>82分</td>
+      </tr>
+      <tr>
+        <td><span class="medal">🥈</span></td>
+        <td>武商MALL</td>
+        <td>78分</td>
+      </tr>
+      <tr>
+        <td><span class="medal">🥉</span></td>
+        <td>武汉万象城</td>
+        <td>75分</td>
+      </tr>
+      <tr class="highlight">
+        <td>4</td>
+        <td>武汉国际广场</td>
+        <td><strong>68分</strong></td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="font-size:13px;color:#666;margin-top:12px;">武汉国际广场排名第4，低于竞品均值10.3分，需重点提升。</p>
+</div>
+
+<!-- Prompt分析 -->
+<div class="prompt-section">
+  <h2>💬 用户都在问什么？</h2>
+  <div class="prompt-chart">
+    <p style="font-size:14px;color:#666;margin-bottom:15px;">当用户在AI里搜索"武汉商场"时，最关心这些问题：</p>
+    <div class="prompt-bar">
+      <div class="type">场景推荐</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:40%;"></div></div>
+      <div class="percent">40%</div>
+    </div>
+    <div class="prompt-bar">
+      <div class="type">对比分析</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:28%;"></div></div>
+      <div class="percent">28%</div>
+    </div>
+    <div class="prompt-bar">
+      <div class="type">品牌咨询</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:16%;"></div></div>
+      <div class="percent">16%</div>
+    </div>
+    <div class="prompt-bar">
+      <div class="type">评测攻略</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:16%;"></div></div>
+      <div class="percent">16%</div>
+    </div>
+  </div>
+  <div style="background:#fff;border-radius:10px;padding:15px;">
+    <p style="font-size:14px;color:#333;font-weight:600;">💡 洞察</p>
+    <p style="font-size:13px;color:#666;margin-top:8px;">超过7成用户在问"适不适合某场景"，场景化内容很重要。</p>
+  </div>
+</div>
+
+<!-- 优化建议 -->
+<div class="suggest-section">
+  <h2>💡 优化建议</h2>
+  <div class="suggest-card">
+    <span class="priority high">高优先级</span>
+    <div class="title">强化品牌软文输出</div>
+    <div class="desc">提升品牌在高端商业领域的专业形象，增强用户主动搜索意愿</div>
+  </div>
+  <div class="suggest-card">
+    <span class="priority medium">中优先级</span>
+    <div class="title">制作对比内容</div>
+    <div class="desc">制作「国际广场VS竞品」系列内容，突出差异化优势</div>
+  </div>
+  <div class="suggest-card">
+    <span class="priority medium">中优先级</span>
+    <div class="title">增加场景化内容</div>
+    <div class="desc">发布「必逛指南」「打卡攻略」等攻略类内容</div>
+  </div>
+</div>
+
+<!-- 底部 -->
+<div class="footer">
+  <div class="brand">好易易GEO</div>
+  <div class="contact">📞 商务咨询：189 8603 4050</div>
+  <div class="tip">帮助品牌在AI时代获得更多推荐机会</div>
+</div>
+
+</div>
+</body>
+</html>

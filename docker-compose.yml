@@ -1,0 +1,20 @@
+# 好易易GEO API 服务 Docker 配置
+
+services:
+  geo-api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: geo-insight-api
+    ports:
+      - "5000:5000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-your-api-key}
+    volumes:
+      - ./server:/app/server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

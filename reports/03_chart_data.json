@@ -1,0 +1,26 @@
+{
+  "title": "武汉万象城 GEO分析数据可视化",
+  "timestamp": "2026-05-09 12:09:16",
+  "charts": [
+    {
+      "type": "platform_radar",
+      "title": "AI平台覆盖雷达图",
+      "platforms": [
+        "豆包",
+        "DeepSeek",
+        "元宝",
+        "Kimi",
+        "通义千问",
+        "智谱"
+      ],
+      "values": [
+        13,
+        11,
+        10,
+        10,
+        11,
+        14
+      ]
+    }
+  ]
+}

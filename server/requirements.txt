@@ -1,0 +1,18 @@
+# 好易易GEO API 服务依赖
+# 生产环境使用
+
+# 核心框架
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# HTTP客户端
+httpx>=0.25.0
+
+# 数据验证
+pydantic>=2.5.0
+
+# Redis支持(可选,用于缓存)
+redis>=5.0.0
+
+# 日志
+python-json-logger>=2.0.7
