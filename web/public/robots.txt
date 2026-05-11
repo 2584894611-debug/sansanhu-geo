@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://xhpj.cloud/sitemap.xml
+
+# 好易易GEO - AI搜索优化分析平台
+# https://xhpj.cloud/
