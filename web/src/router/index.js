@@ -7,6 +7,12 @@ const routes = [
     component: () => import('../pages/Home.vue')
   },
   {
+    path: '/wuhan-geo',
+    name: 'WuhanGeo',
+    component: () => import('../pages/WuhanGeo.vue'),
+    meta: { title: '武汉GEO公司 - 好易易GEO' }
+  },
+  {
     path: '/report/:id?',
     name: 'Report',
     component: () => import('../pages/Report.vue')

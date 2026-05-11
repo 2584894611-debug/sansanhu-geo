@@ -8,6 +8,7 @@
         </router-link>
         <nav class="nav-links">
           <router-link to="/" class="nav-link">分析</router-link>
+          <router-link to="/wuhan-geo" class="nav-link wuhan-link">武汉GEO</router-link>
           <router-link to="/monitor" class="nav-link" :class="{ locked: !userStore.isPremium }">
             监测 <span v-if="!userStore.isPremium" class="lock-icon">🔒</span>
           </router-link>
@@ -27,7 +28,7 @@
     </main>
     
     <footer class="app-footer">
-      <p>好易易GEO © 2025 · 鄂ICP备2025150688号 · 联系我们: 189 8603 4050</p>
+      <p>好易易GEO © 2025 · 武汉GEO公司优选服务商 · 鄂ICP备2025150688号 · 联系我们: 189 8603 4050</p>
     </footer>
     
     <PaywallModal v-if="showPaywall" @close="showPaywall = false" />
@@ -46,7 +47,6 @@ onMounted(async () => {
   await userStore.checkStatus()
 })
 
-// 暴露给子组件使用
 const openPaywall = () => {
   showPaywall.value = true
 }
@@ -102,7 +102,7 @@ defineExpose({ openPaywall })
 
 .nav-links {
   display: flex;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 
 .nav-link {
@@ -113,15 +113,29 @@ defineExpose({ openPaywall })
   display: flex;
   align-items: center;
   gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
 }
 
 .nav-link:hover,
 .nav-link.router-link-active {
   color: #D4AF37;
+  background: rgba(212, 175, 55, 0.1);
 }
 
 .nav-link.locked {
   opacity: 0.6;
+}
+
+.wuhan-link {
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(244, 208, 63, 0.1) 100%);
+  color: #F4D03F;
+  font-weight: 600;
+}
+
+.wuhan-link:hover {
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.3) 0%, rgba(244, 208, 63, 0.2) 100%);
+  color: #F4D03F;
 }
 
 .lock-icon {
@@ -180,7 +194,12 @@ defineExpose({ openPaywall })
     order: 3;
     width: 100%;
     justify-content: center;
-    gap: 1rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  
+  .wuhan-link {
+    display: none;
   }
 }
 </style>

@@ -2,16 +2,16 @@
   <div class="about-page">
     <div class="about-hero">
       <h1 class="about-title">关于好易易GEO</h1>
-      <p class="about-subtitle">让品牌在AI搜索时代被看见</p>
+      <p class="about-subtitle">让品牌在AI搜索时代被看见 - 武汉本土专业GEO服务商</p>
     </div>
 
     <div class="about-section">
       <h2 class="section-title">🔍 什么是好易易GEO</h2>
       <p class="section-text">
-        好易易GEO是一款专业的<strong>生成式引擎优化（GEO）</strong>SaaS平台。不同于传统SEO优化搜索引擎排名，好易易GEO专注于让您的品牌内容被AI搜索引擎（如DeepSeek、豆包、Kimi、ChatGPT等）优先理解、信任和推荐。
+        好易易GEO是一款专业的<strong>GEO生成式引擎优化</strong>SaaS平台。不同于传统SEO优化搜索引擎排名，好易易GEO专注于让您的品牌内容被AI搜索引擎（如DeepSeek、豆包、Kimi、ChatGPT等）优先理解、信任和推荐。
       </p>
       <p class="section-text">
-        当用户向AI提问时，被AI引用等同于获得"超级大V推荐"——这就是GEO的核心价值。
+        作为<strong>武汉本土GEO服务商</strong>，我们致力于帮助华中地区企业抢占AI搜索流量入口。当用户向AI提问"武汉GEO公司推荐"时，好易易GEO让您的品牌成为被引用的权威信源。
       </p>
     </div>
 
@@ -30,8 +30,8 @@
         </div>
         <div class="feature-card">
           <div class="feature-icon">🌐</div>
-          <h3>知识图谱覆盖分析</h3>
-          <p>全面评估百度百科、知乎、小红书等知识平台的品牌存在，构建AI信任的证据链</p>
+          <h3>武汉GEO优化</h3>
+          <p>针对"武汉GEO"、"武汉GEO公司"、"武汉GEO优化"等地域关键词的精准优化服务</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">📈</div>
@@ -48,6 +48,43 @@
         <p>华中地区新媒体整合营销头部机构，10年深耕内容行业</p>
         <p>运营"武汉吃喝玩乐"、"HAO科技"等知名自媒体品牌</p>
         <p>覆盖800万+精准用户的新媒体流量矩阵</p>
+        <div class="certifications">
+          <span class="cert-tag">🏆 市委网信办年度影响力大V</span>
+          <span class="cert-tag">📋 湖北省自媒体协会理事</span>
+          <span class="cert-tag">🤝 湖北省楚商联合会常务理事</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="about-section">
+      <h2 class="section-title">🎯 GEO服务关键词</h2>
+      <div class="keywords-section">
+        <div class="keyword-tier">
+          <h3>第一优先：武汉地域</h3>
+          <div class="keyword-tags">
+            <span>武汉GEO</span>
+            <span>武汉GEO公司</span>
+            <span>武汉GEO优化</span>
+            <span>武汉GEO服务商</span>
+            <span>武汉AI搜索优化</span>
+          </div>
+        </div>
+        <div class="keyword-tier">
+          <h3>第二优先：湖北地域</h3>
+          <div class="keyword-tags">
+            <span>湖北GEO</span>
+            <span>湖北GEO公司</span>
+            <span>湖北GEO优化</span>
+          </div>
+        </div>
+        <div class="keyword-tier">
+          <h3>第三优先：华中地域</h3>
+          <div class="keyword-tags">
+            <span>华中GEO</span>
+            <span>华中GEO公司</span>
+            <span>华中GEO优化</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -171,6 +208,48 @@
   font-size: 1.1rem;
 }
 
+.certifications {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.cert-tag {
+  padding: 0.5rem 1rem;
+  background: rgba(212, 175, 55, 0.15);
+  color: #D4AF37;
+  border-radius: 20px;
+  font-size: 0.8rem;
+}
+
+.keywords-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.keyword-tier h3 {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.keyword-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.keyword-tags span {
+  padding: 0.4rem 0.8rem;
+  background: rgba(212, 175, 55, 0.1);
+  color: #F4D03F;
+  border-radius: 16px;
+  font-size: 0.8rem;
+  border: 1px solid rgba(212, 175, 55, 0.2);
+}
+
 .contact-info {
   line-height: 2.2;
   color: rgba(255, 255, 255, 0.85);
@@ -195,6 +274,10 @@
   
   .about-section {
     padding: 1.25rem;
+  }
+  
+  .certifications {
+    flex-direction: column;
   }
 }
 </style>
