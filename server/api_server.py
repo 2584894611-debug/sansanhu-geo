@@ -456,84 +456,164 @@ def get_monitor_history(device_id: str, subscription_id: int, days: int = 30) ->
         return [dict(row) for row in c.fetchall()]
 
 # ==================== 行业数据 ====================
-INDUSTRIES_DATA = {
-    "knowledge_gap": {
-        "name": "🧠 知识盲区品类",
-        "description": "用户认知有限，需要建立品牌认知",
-        "industries": [
-            {"id": "consumer_electronics", "name": "消费电子"},
-            {"id": "baby_products", "name": "母婴用品"},
-            {"id": "fitness", "name": "运动健身"}
-        ],
-        "benchmark_geo_score": 45,
-        "key_factors": ["品牌权威性", "专业内容覆盖", "问答内容布局"]
+INDUSTRIES_DATA = [
+    {
+        "id": "catering",
+        "name": "餐饮美食",
+        "description": "餐饮门店、小吃快餐、茶饮甜点等",
+        "benchmark_geo_score": 73,
+        "key_factors": ["本地SEO", "用户评价"],
+        "children": []
     },
-    "high_value_low_freq": {
-        "name": "💰 低频高客单",
-        "description": "决策周期长，需要建立信任和专业形象",
-        "industries": [
-            {"id": "real_estate", "name": "商业地产"},
-            {"id": "tourism", "name": "文旅"},
-            {"id": "renovation", "name": "装修建材"},
-            {"id": "wedding", "name": "婚纱摄影"},
-            {"id": "postpartum", "name": "月子中心"}
-        ],
-        "benchmark_geo_score": 50,
-        "key_factors": ["口碑管理", "案例展示", "专业背书", "用户评价"]
+    {
+        "id": "mall",
+        "name": "商场",
+        "description": "购物中心、商业综合体、奥特莱斯等",
+        "benchmark_geo_score": 70,
+        "key_factors": ["本地化", "场景体验", "活动内容"],
+        "children": []
     },
-    "innovation_niche": {
-        "name": "🔍 长尾痛点微创新",
-        "description": "满足细分需求，需要突出差异化优势",
-        "industries": [
-            {"id": "smart_hardware", "name": "智能硬件"},
-            {"id": "personal_care", "name": "个护创新"},
-            {"id": "home_appliances", "name": "小家电"}
-        ],
-        "benchmark_geo_score": 40,
-        "key_factors": ["产品差异化", "使用场景内容", "用户评测"]
+    {
+        "id": "retail",
+        "name": "零售百货",
+        "description": "含服饰鞋包",
+        "benchmark_geo_score": 70,
+        "key_factors": ["差异化", "体验内容"],
+        "children": [
+            {"id": "apparel", "name": "服饰鞋包"}
+        ]
     },
-    "to_b_business": {
-        "name": "🏢 To B业务",
-        "description": "面向企业客户，需要建立专业权威形象",
-        "industries": [
-            {"id": "saas", "name": "SaaS软件"},
-            {"id": "industrial", "name": "工业设备"},
-            {"id": "enterprise_service", "name": "企业服务"}
-        ],
+    {
+        "id": "local_service",
+        "name": "本地生活服务",
+        "description": "美容美发、摄影摄像、家政维修等",
+        "benchmark_geo_score": 71,
+        "key_factors": ["本地化", "场景推荐"],
+        "children": []
+    },
+    {
+        "id": "culture_tourism",
+        "name": "文旅休闲",
+        "description": "景区、酒店、博物馆、演出等",
+        "benchmark_geo_score": 68,
+        "key_factors": ["内容种草", "场景体验"],
+        "children": []
+    },
+    {
+        "id": "fmcg",
+        "name": "快消品",
+        "description": "食品饮料、日化美妆、母婴用品",
+        "benchmark_geo_score": 72,
+        "key_factors": ["品牌心智", "种草内容"],
+        "children": [
+            {"id": "food_beverage", "name": "食品饮料"},
+            {"id": "beauty_care", "name": "日化美妆"},
+            {"id": "mother_baby", "name": "母婴"}
+        ]
+    },
+    {
+        "id": "internet_service",
+        "name": "互联网服务",
+        "description": "含电商、游戏、社交、工具",
+        "benchmark_geo_score": 75,
+        "key_factors": ["内容覆盖", "技术SEO"],
+        "children": [
+            {"id": "ecommerce", "name": "电商"},
+            {"id": "gaming", "name": "游戏"},
+            {"id": "social", "name": "社交"},
+            {"id": "tools", "name": "工具"}
+        ]
+    },
+    {
+        "id": "media_ad",
+        "name": "传媒广告",
+        "description": "新闻媒体、广告营销、公关活动等",
+        "benchmark_geo_score": 72,
+        "key_factors": ["内容能力", "案例展示"],
+        "children": []
+    },
+    {
+        "id": "real_estate",
+        "name": "房地产及家居",
+        "description": "房产交易、装修家居、家居卖场等",
+        "benchmark_geo_score": 68,
+        "key_factors": ["低频高客单", "场景化内容"],
+        "children": []
+    },
+    {
+        "id": "education",
+        "name": "教育培训",
+        "description": "K12、职业教育、兴趣培训等",
+        "benchmark_geo_score": 66,
+        "key_factors": ["口碑", "效果展示"],
+        "children": []
+    },
+    {
+        "id": "healthcare",
+        "name": "医疗健康",
+        "description": "医院、诊所、药店、医疗器械等",
+        "benchmark_geo_score": 60,
+        "key_factors": ["合规", "权威背书"],
+        "children": []
+    },
+    {
+        "id": "finance",
+        "name": "金融服务",
+        "description": "银行、保险、证券、基金等",
+        "benchmark_geo_score": 65,
+        "key_factors": ["合规", "信任度建设"],
+        "children": []
+    },
+    {
+        "id": "automotive",
+        "name": "汽车交通",
+        "description": "汽车销售、汽车后市场、交通出行等",
+        "benchmark_geo_score": 70,
+        "key_factors": ["口碑", "对比内容"],
+        "children": []
+    },
+    {
+        "id": "manufacturing",
+        "name": "工业制造",
+        "description": "机械设备、电子制造、工业零部件等",
+        "benchmark_geo_score": 62,
+        "key_factors": ["To B内容", "专业权威"],
+        "children": []
+    },
+    {
+        "id": "energy_chemical",
+        "name": "能源化工",
+        "description": "石油化工、新能源、材料科学等",
+        "benchmark_geo_score": 58,
+        "key_factors": ["行业深度", "政策解读"],
+        "children": []
+    },
+    {
+        "id": "government",
+        "name": "政务及公共事业",
+        "description": "政府机构、公共服务、公益组织等",
         "benchmark_geo_score": 55,
-        "key_factors": ["行业解决方案", "客户案例", "技术文档", "专业资质"]
+        "key_factors": ["权威信息", "便民服务"],
+        "children": []
     }
-}
+]
 
 def get_all_industries() -> List[Dict[str, Any]]:
     """获取所有行业分类"""
-    result = []
-    for category_id, category_data in INDUSTRIES_DATA.items():
-        for industry in category_data["industries"]:
-            result.append({
-                "category_id": category_id,
-                "category_name": category_data["name"],
-                "category_description": category_data["description"],
-                "id": industry["id"],
-                "name": industry["name"],
-                "benchmark_geo_score": category_data["benchmark_geo_score"],
-                "key_factors": category_data["key_factors"]
-            })
-    return result
+    return INDUSTRIES_DATA
 
 def get_industry_by_id(industry_id: str) -> Optional[Dict[str, Any]]:
     """根据ID获取行业详情"""
-    for category_id, category_data in INDUSTRIES_DATA.items():
-        for industry in category_data["industries"]:
-            if industry["id"] == industry_id:
+    for industry in INDUSTRIES_DATA:
+        if industry["id"] == industry_id:
+            return industry
+        # 检查子行业
+        for child in industry.get("children", []):
+            if child["id"] == industry_id:
                 return {
-                    "category_id": category_id,
-                    "category_name": category_data["name"],
-                    "category_description": category_data["description"],
-                    "id": industry["id"],
-                    "name": industry["name"],
-                    "benchmark_geo_score": category_data["benchmark_geo_score"],
-                    "key_factors": category_data["key_factors"]
+                    **industry,
+                    "selected_sub_id": child["id"],
+                    "selected_sub_name": child["name"]
                 }
     return None
 

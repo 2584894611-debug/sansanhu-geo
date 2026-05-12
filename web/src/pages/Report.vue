@@ -63,8 +63,7 @@
         <h3 class="card-title">📊 行业对标</h3>
         <div class="benchmark-content">
           <div class="benchmark-category">
-            <span class="category-icon">{{ industryBenchmark.category_icon }}</span>
-            <span class="category-name">{{ industryBenchmark.category_name }}</span>
+            <span class="category-name">{{ industryBenchmark.name }}</span>
           </div>
           <div class="benchmark-score">
             <div class="score-compare">
@@ -163,28 +162,37 @@ const showPaywall = ref(false)
 
 // 行业分类映射
 const industryCategoryMap = {
-  '消费电子': { category_id: 'knowledge_gap', category_name: '知识盲区品类', category_icon: '🧠', benchmark_geo_score: 45, key_factors: ['品牌权威性', '专业内容覆盖', '问答内容布局'] },
-  '母婴用品': { category_id: 'knowledge_gap', category_name: '知识盲区品类', category_icon: '🧠', benchmark_geo_score: 45, key_factors: ['品牌权威性', '专业内容覆盖', '问答内容布局'] },
-  '运动健身': { category_id: 'knowledge_gap', category_name: '知识盲区品类', category_icon: '🧠', benchmark_geo_score: 45, key_factors: ['品牌权威性', '专业内容覆盖', '问答内容布局'] },
-  '商业地产': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
-  '文旅': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
-  '装修建材': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
-  '婚纱摄影': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
-  '月子中心': { category_id: 'high_value_low_freq', category_name: '低频高客单', category_icon: '💰', benchmark_geo_score: 50, key_factors: ['口碑管理', '案例展示', '专业背书', '用户评价'] },
-  '智能硬件': { category_id: 'innovation_niche', category_name: '长尾痛点微创新', category_icon: '🔍', benchmark_geo_score: 40, key_factors: ['产品差异化', '使用场景内容', '用户评测'] },
-  '个护创新': { category_id: 'innovation_niche', category_name: '长尾痛点微创新', category_icon: '🔍', benchmark_geo_score: 40, key_factors: ['产品差异化', '使用场景内容', '用户评测'] },
-  '小家电': { category_id: 'innovation_niche', category_name: '长尾痛点微创新', category_icon: '🔍', benchmark_geo_score: 40, key_factors: ['产品差异化', '使用场景内容', '用户评测'] },
-  'SaaS软件': { category_id: 'to_b_business', category_name: 'To B业务', category_icon: '🏢', benchmark_geo_score: 55, key_factors: ['行业解决方案', '客户案例', '技术文档', '专业资质'] },
-  '工业设备': { category_id: 'to_b_business', category_name: 'To B业务', category_icon: '🏢', benchmark_geo_score: 55, key_factors: ['行业解决方案', '客户案例', '技术文档', '专业资质'] },
-  '企业服务': { category_id: 'to_b_business', category_name: 'To B业务', category_icon: '🏢', benchmark_geo_score: 55, key_factors: ['行业解决方案', '客户案例', '技术文档', '专业资质'] }
+  '餐饮美食': { id: 'catering', name: '餐饮美食', benchmark_geo_score: 73, key_factors: ['本地SEO', '用户评价'] },
+  '商场': { id: 'mall', name: '商场', benchmark_geo_score: 70, key_factors: ['本地化', '场景体验', '活动内容'] },
+  '零售百货': { id: 'retail', name: '零售百货', benchmark_geo_score: 70, key_factors: ['差异化', '体验内容'] },
+  '服饰鞋包': { id: 'retail', name: '零售百货', benchmark_geo_score: 70, key_factors: ['差异化', '体验内容'] },
+  '本地生活服务': { id: 'local_service', name: '本地生活服务', benchmark_geo_score: 71, key_factors: ['本地化', '场景推荐'] },
+  '文旅休闲': { id: 'culture_tourism', name: '文旅休闲', benchmark_geo_score: 68, key_factors: ['内容种草', '场景体验'] },
+  '快消品': { id: 'fmcg', name: '快消品', benchmark_geo_score: 72, key_factors: ['品牌心智', '种草内容'] },
+  '食品饮料': { id: 'fmcg', name: '快消品', benchmark_geo_score: 72, key_factors: ['品牌心智', '种草内容'] },
+  '日化美妆': { id: 'fmcg', name: '快消品', benchmark_geo_score: 72, key_factors: ['品牌心智', '种草内容'] },
+  '母婴': { id: 'fmcg', name: '快消品', benchmark_geo_score: 72, key_factors: ['品牌心智', '种草内容'] },
+  '互联网服务': { id: 'internet_service', name: '互联网服务', benchmark_geo_score: 75, key_factors: ['内容覆盖', '技术SEO'] },
+  '电商': { id: 'internet_service', name: '互联网服务', benchmark_geo_score: 75, key_factors: ['内容覆盖', '技术SEO'] },
+  '游戏': { id: 'internet_service', name: '互联网服务', benchmark_geo_score: 75, key_factors: ['内容覆盖', '技术SEO'] },
+  '社交': { id: 'internet_service', name: '互联网服务', benchmark_geo_score: 75, key_factors: ['内容覆盖', '技术SEO'] },
+  '工具': { id: 'internet_service', name: '互联网服务', benchmark_geo_score: 75, key_factors: ['内容覆盖', '技术SEO'] },
+  '传媒广告': { id: 'media_ad', name: '传媒广告', benchmark_geo_score: 72, key_factors: ['内容能力', '案例展示'] },
+  '房地产及家居': { id: 'real_estate', name: '房地产及家居', benchmark_geo_score: 68, key_factors: ['低频高客单', '场景化内容'] },
+  '教育培训': { id: 'education', name: '教育培训', benchmark_geo_score: 66, key_factors: ['口碑', '效果展示'] },
+  '医疗健康': { id: 'healthcare', name: '医疗健康', benchmark_geo_score: 60, key_factors: ['合规', '权威背书'] },
+  '金融服务': { id: 'finance', name: '金融服务', benchmark_geo_score: 65, key_factors: ['合规', '信任度建设'] },
+  '汽车交通': { id: 'automotive', name: '汽车交通', benchmark_geo_score: 70, key_factors: ['口碑', '对比内容'] },
+  '工业制造': { id: 'manufacturing', name: '工业制造', benchmark_geo_score: 62, key_factors: ['To B内容', '专业权威'] },
+  '能源化工': { id: 'energy_chemical', name: '能源化工', benchmark_geo_score: 58, key_factors: ['行业深度', '政策解读'] },
+  '政务及公共事业': { id: 'government', name: '政务及公共事业', benchmark_geo_score: 55, key_factors: ['权威信息', '便民服务'] }
 }
 
 const industryBenchmark = computed(() => {
   if (!reportData.value?.industry) return null
   return industryCategoryMap[reportData.value.industry] || {
-    category_id: 'general',
-    category_name: '通用行业',
-    category_icon: '📋',
+    id: 'unknown',
+    name: reportData.value.industry,
     benchmark_geo_score: 50,
     key_factors: ['品牌认知', '内容质量', '用户口碑']
   }

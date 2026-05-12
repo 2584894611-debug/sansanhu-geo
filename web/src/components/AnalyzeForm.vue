@@ -14,43 +14,41 @@
     
     <div class="form-group">
       <label class="form-label">所属行业</label>
-      <select v-model="form.industry" class="select" :disabled="loading">
-        <optgroup label="🧠 知识盲区品类">
-          <option value="消费电子">消费电子</option>
-          <option value="母婴用品">母婴用品</option>
-          <option value="运动健身">运动健身</option>
-        </optgroup>
-        <optgroup label="💰 低频高客单">
-          <option value="商业地产">商业地产</option>
-          <option value="文旅">文旅</option>
-          <option value="装修建材">装修建材</option>
-          <option value="婚纱摄影">婚纱摄影</option>
-          <option value="月子中心">月子中心</option>
-        </optgroup>
-        <optgroup label="🔍 长尾痛点微创新">
-          <option value="智能硬件">智能硬件</option>
-          <option value="个护创新">个护创新</option>
-          <option value="小家电">小家电</option>
-        </optgroup>
-        <optgroup label="🏢 To B业务">
-          <option value="SaaS软件">SaaS软件</option>
-          <option value="工业设备">工业设备</option>
-          <option value="企业服务">企业服务</option>
-        </optgroup>
-        <optgroup label="通用">
-          <option value="科技">科技</option>
-          <option value="金融">金融</option>
-          <option value="教育">教育</option>
-          <option value="医疗健康">医疗健康</option>
-          <option value="零售">零售</option>
-          <option value="餐饮">餐饮</option>
-          <option value="旅游">旅游</option>
-          <option value="房地产">房地产</option>
-          <option value="制造业">制造业</option>
-          <option value="媒体娱乐">媒体娱乐</option>
-          <option value="其他">其他</option>
-        </optgroup>
+      
+      <!-- 一级行业选择 -->
+      <select 
+        v-model="selectedPrimaryId" 
+        class="select"
+        :disabled="loading"
+        @change="onPrimaryChange"
+      >
+        <option value="">请选择行业大类</option>
+        <option 
+          v-for="industry in industries" 
+          :key="industry.id" 
+          :value="industry.id"
+        >
+          {{ industry.name }}
+        </option>
       </select>
+      
+      <!-- 二级行业选择（有子行业时显示） -->
+      <select 
+        v-if="currentPrimary && currentPrimary.children && currentPrimary.children.length > 0"
+        v-model="form.industry"
+        class="select sub-select"
+        :disabled="loading"
+      >
+        <option value="">请选择子行业</option>
+        <option 
+          v-for="child in currentPrimary.children" 
+          :key="child.id" 
+          :value="child.name"
+        >
+          {{ child.name }}
+        </option>
+      </select>
+      
       <div v-if="form.industry && industryBenchmark" class="benchmark-tip">
         行业基准分: {{ industryBenchmark }}分
       </div>
@@ -79,7 +77,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore } from '../stores/user'
 import api from '../api'
 
@@ -89,29 +87,71 @@ const userStore = useUserStore()
 
 const form = ref({
   brand: '',
-  industry: '通用'
+  industry: ''
 })
 
+const selectedPrimaryId = ref('')
+const industries = ref([])
 const loading = ref(false)
 const error = ref('')
 
 // 行业基准分映射
 const benchmarkMap = {
-  '消费电子': 45, '母婴用品': 45, '运动健身': 45,
-  '商业地产': 50, '文旅': 50, '装修建材': 50, '婚纱摄影': 50, '月子中心': 50,
-  '智能硬件': 40, '个护创新': 40, '小家电': 40,
-  'SaaS软件': 55, '工业设备': 55, '企业服务': 55,
-  '科技': 50, '金融': 50, '教育': 50, '医疗健康': 50, '零售': 50,
-  '餐饮': 50, '旅游': 50, '房地产': 50, '制造业': 50, '媒体娱乐': 50, '其他': 50, '通用': 50
+  '餐饮美食': 73, '商场': 70, '零售百货': 70, '服饰鞋包': 70,
+  '本地生活服务': 71, '文旅休闲': 68, '快消品': 72,
+  '食品饮料': 72, '日化美妆': 72, '母婴': 72,
+  '互联网服务': 75, '电商': 75, '游戏': 75, '社交': 75, '工具': 75,
+  '传媒广告': 72, '房地产及家居': 68, '教育培训': 66,
+  '医疗健康': 60, '金融服务': 65, '汽车交通': 70,
+  '工业制造': 62, '能源化工': 58, '政务及公共事业': 55
 }
+
+const currentPrimary = computed(() => {
+  if (!selectedPrimaryId.value) return null
+  return industries.value.find(ind => ind.id === selectedPrimaryId.value) || null
+})
 
 const industryBenchmark = computed(() => {
   return benchmarkMap[form.value.industry] || 50
 })
 
 const canSubmit = computed(() => {
-  return form.value.brand.trim().length >= 2 && userStore.canAnalyze
+  return form.value.brand.trim().length >= 2 && form.value.industry && userStore.canAnalyze
 })
+
+function onPrimaryChange() {
+  const primary = currentPrimary.value
+  if (primary) {
+    // 如果没有子行业，直接选中一级
+    if (!primary.children || primary.children.length === 0) {
+      form.value.industry = primary.name
+    } else {
+      // 有子行业，清空子行业选择
+      form.value.industry = ''
+    }
+  }
+}
+
+// 监听 industry 变化（用户选择子行业时）
+watch(() => form.value.industry, (newVal) => {
+  if (newVal && currentPrimary.value && currentPrimary.value.children) {
+    const found = currentPrimary.value.children.find(c => c.name === newVal)
+    if (found) {
+      selectedPrimaryId.value = currentPrimary.value.id
+    }
+  }
+})
+
+async function loadIndustries() {
+  try {
+    const response = await api.getIndustries()
+    if (response.data.success) {
+      industries.value = response.data.data
+    }
+  } catch (err) {
+    console.error('加载行业列表失败:', err)
+  }
+}
 
 async function handleAnalyze() {
   if (!canSubmit.value || loading.value) return
@@ -144,65 +184,119 @@ async function handleAnalyze() {
     loading.value = false
   }
 }
+
+onMounted(() => {
+  loadIndustries()
+})
 </script>
 
 <style scoped>
 .analyze-form {
-  padding: 2rem;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 24px;
 }
 
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 20px;
 }
 
 .form-label {
   display: block;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  color: var(--text-primary);
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
+}
+
+.input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #4f46e5;
+}
+
+.select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 16px;
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.select:focus {
+  outline: none;
+  border-color: #4f46e5;
+}
+
+.sub-select {
+  margin-top: 10px;
+}
+
+.benchmark-tip {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f0f9ff;
+  border-radius: 6px;
+  color: #0369a1;
+  font-size: 14px;
 }
 
 .form-actions {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 12px;
 }
 
 .analyze-btn {
   width: 100%;
-  padding: 1rem;
-  font-size: 1.125rem;
-}
-
-.analyze-btn .loading-spinner.small {
-  width: 20px;
-  height: 20px;
-  border-width: 2px;
+  padding: 14px 24px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .limit-warning {
   text-align: center;
-  color: #e53e3e;
-  font-size: 0.875rem;
+  color: #dc2626;
+  font-size: 14px;
 }
 
 .error-message {
-  margin-top: 1rem;
-  padding: 0.75rem;
-  background: rgba(229, 62, 62, 0.1);
-  border-radius: var(--radius-sm);
-  color: #e53e3e;
-  font-size: 0.875rem;
-  text-align: center;
+  margin-top: 12px;
+  padding: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #dc2626;
+  font-size: 14px;
 }
 
-.benchmark-tip {
-  margin-top: 0.5rem;
-  font-size: 0.8rem;
-  color: #D4AF37;
-  background: rgba(212, 175, 55, 0.1);
-  padding: 0.4rem 0.75rem;
-  border-radius: var(--radius-sm);
+.loading-spinner {
   display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #ffffff;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-spinner.small {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>
