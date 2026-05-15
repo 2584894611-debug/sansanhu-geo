@@ -252,7 +252,7 @@
 .cta-secondary {
   background: #E5E7EB;
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid #d0d0d0;
 }
 
 .section {
@@ -312,7 +312,7 @@
 }
 
 .comparison-section {
-  background: rgba(255, 255, 255, 0.03);
+  background: #f5f5f5;
   border-radius: 20px;
   padding: 2rem;
 }
@@ -330,7 +330,7 @@
 }
 
 .col-header {
-  background: rgba(255, 255, 255, 0.08);
+  background: #e8e8e8;
   padding: 1rem;
   font-weight: 600;
   color: #D4AF37;
@@ -441,7 +441,7 @@
 }
 
 .faq-section {
-  background: rgba(255, 255, 255, 0.03);
+  background: #f5f5f5;
   border-radius: 20px;
   padding: 2rem;
 }
@@ -465,7 +465,7 @@
 }
 
 .faq-item p {
-  color: rgba(255, 255, 255, 0.75);
+  color: #555;
   line-height: 1.7;
   font-size: 0.9rem;
 }
@@ -512,7 +512,7 @@
   color: #fff;
   border-radius: 12px;
   text-decoration: none;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid #d0d0d0;
 }
 
 .service-tags {

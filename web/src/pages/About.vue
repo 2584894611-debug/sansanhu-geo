@@ -1,14 +1,15 @@
 <template>
   <div class="about-page">
+    
     <div class="about-hero">
-      <h1 class="about-title">关于好易易GEO</h1>
+      <h1 class="about-title">关于三三狐GEO</h1>
       <p class="about-subtitle">让品牌在AI搜索时代被看见</p>
     </div>
 
     <div class="about-section">
-      <h2 class="section-title">🔍 什么是好易易GEO</h2>
+      <h2 class="section-title">🔍 什么是三三狐GEO</h2>
       <p class="section-text">
-        好易易GEO是一款专业的<strong>生成式引擎优化（GEO）</strong>SaaS平台。不同于传统SEO优化搜索引擎排名，好易易GEO专注于让您的品牌内容被AI搜索引擎（如DeepSeek、豆包、Kimi、ChatGPT等）优先理解、信任和推荐。
+        三三狐GEO是一款专业的<strong>生成式引擎优化（GEO）</strong>SaaS平台。不同于传统SEO优化搜索引擎排名，三三狐GEO专注于让您的品牌内容被AI搜索引擎（如DeepSeek、豆包、Kimi、ChatGPT等）优先理解、信任和推荐。
       </p>
       <p class="section-text">
         当用户向AI提问时，被AI引用等同于获得"超级大V推荐"——这就是GEO的核心价值。
@@ -47,7 +48,6 @@
         <p><strong>武汉爱黑马文化传媒有限公司</strong></p>
         <p>华中地区新媒体整合营销头部机构，10年深耕内容行业</p>
         <p>运营"武汉吃喝玩乐"、"HAO科技"等知名自媒体品牌</p>
-        <p>覆盖800万+精准用户的新媒体流量矩阵</p>
       </div>
     </div>
 
@@ -74,7 +74,7 @@
   max-width: 900px;
   margin: 0 auto;
   padding: 2rem;
-  color: #fff;
+  color: #2c2c2c;
 }
 
 .about-hero {
@@ -85,7 +85,7 @@
 .about-title {
   font-size: 2.5rem;
   font-weight: 800;
-  background: linear-gradient(135deg, #D4AF37 0%, #F4D03F 100%);
+  background: linear-gradient(135deg, #D4AF37 0%, #B8941F 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 0.5rem;
@@ -93,16 +93,16 @@
 
 .about-subtitle {
   font-size: 1.25rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: #555;
   font-weight: 400;
 }
 
 .about-section {
   margin-bottom: 3rem;
   padding: 2rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: #f9f9f9;
   border-radius: 16px;
-  border: 1px solid rgba(212, 175, 55, 0.15);
+  border: 1px solid #e8e8e8;
 }
 
 .section-title {
@@ -115,12 +115,12 @@
 .section-text {
   font-size: 1rem;
   line-height: 1.8;
-  color: rgba(255, 255, 255, 0.85);
+  color: #333;
   margin-bottom: 0.75rem;
 }
 
 .section-text strong {
-  color: #F4D03F;
+  color: #B8941F;
 }
 
 .feature-grid {
@@ -132,15 +132,15 @@
 
 .feature-card {
   padding: 1.5rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: #fff;
   border-radius: 12px;
-  border: 1px solid rgba(212, 175, 55, 0.1);
+  border: 1px solid #e8e8e8;
   transition: transform 0.2s, border-color 0.2s;
 }
 
 .feature-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(212, 175, 55, 0.3);
+  border-color: #D4AF37;
 }
 
 .feature-icon {
@@ -151,36 +151,36 @@
 .feature-card h3 {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #F4D03F;
+  color: #B8941F;
   margin-bottom: 0.5rem;
 }
 
 .feature-card p {
   font-size: 0.9rem;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.7);
+  color: #555;
 }
 
 .company-info {
   line-height: 2;
-  color: rgba(255, 255, 255, 0.85);
+  color: #333;
 }
 
 .company-info strong {
-  color: #F4D03F;
+  color: #B8941F;
   font-size: 1.1rem;
 }
 
 .contact-info {
   line-height: 2.2;
-  color: rgba(255, 255, 255, 0.85);
+  color: #333;
   font-size: 1rem;
 }
 
 .about-footer {
   text-align: center;
   padding: 2rem 0;
-  color: rgba(255, 255, 255, 0.4);
+  color: #999;
   font-size: 0.85rem;
 }
 
