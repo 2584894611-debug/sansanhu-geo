@@ -39,6 +39,20 @@ export const api = {
   
   // 评分趋势
   getBrandTrend: (brand, days = 30) => apiClient.get('/brand/trend', { params: { brand, days } }),
+
+  // ===== PRD 监控仪表盘 API =====
+  getDashboardBrands: () => apiClient.get('/v1/dashboard/brands'),
+  getDashboardScoreTrend: (brand, days = 30) =>
+    apiClient.get('/v1/dashboard/score-trend', { params: { brand, days } }),
+  getDashboardKeywordPenetration: (brand, days = 30) =>
+    apiClient.get('/v1/dashboard/keyword-penetration', { params: { brand, days } }),
+  getDashboardPlatformDistribution: (brand, days = 30) =>
+    apiClient.get('/v1/dashboard/platform-distribution', { params: { brand, days } }),
+  getDashboardCompetitorComparison: (brand, days = 30) =>
+    apiClient.get('/v1/dashboard/competitor-comparison', { params: { brand, days } }),
+  getDashboardAlerts: (brand, days = 30) =>
+    apiClient.get('/v1/dashboard/alerts', { params: { brand, days } }),
+  refreshDashboard: (data) => apiClient.post('/v1/dashboard/refresh', data),
   
   // 预警信息
   getAlerts: (brand = null) => apiClient.get('/alerts', { params: { brand } }),

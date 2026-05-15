@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 node_modules/
+web/.npm-cache/
 *.log
 data/
 .env

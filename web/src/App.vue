@@ -3,13 +3,13 @@
     <header class="app-header">
       <div class="header-content">
         <router-link to="/" class="logo">
-          <span class="logo-icon">🔍</span>
-          <span class="logo-text">好易易GEO</span>
+          <span class="logo-mark">三</span>
+          <span class="logo-text">三三狐GEO</span>
         </router-link>
         <nav class="nav-links">
           <router-link to="/" class="nav-link">分析</router-link>
           <router-link to="/monitor" class="nav-link" :class="{ locked: !userStore.isPremium }">
-            监测 <span v-if="!userStore.isPremium" class="lock-icon">🔒</span>
+            监控仪表盘
           </router-link>
           <router-link to="/profile" class="nav-link">个人中心</router-link>
           <router-link to="/about" class="nav-link">关于我们</router-link>
@@ -59,13 +59,13 @@ defineExpose({ openPaywall })
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(135deg, #1a365d 0%, #2d4a6f 100%);
+  background: #F8FAFC;
 }
 
 .app-header {
-  background: rgba(26, 54, 93, 0.95);
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+  border-bottom: 1px solid #E5E7EB;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -83,21 +83,28 @@ defineExpose({ openPaywall })
 .logo {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.625rem;
   text-decoration: none;
-  color: #fff;
+  color: #1A1A2E;
 }
 
-.logo-icon {
-  font-size: 1.5rem;
+.logo-mark {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: #FF6B35;
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 1rem;
 }
 
 .logo-text {
   font-size: 1.25rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #D4AF37 0%, #F4D03F 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #1A1A2E;
 }
 
 .nav-links {
@@ -106,7 +113,7 @@ defineExpose({ openPaywall })
 }
 
 .nav-link {
-  color: rgba(255, 255, 255, 0.8);
+  color: #4B5563;
   text-decoration: none;
   font-weight: 500;
   transition: color 0.2s;
@@ -117,15 +124,11 @@ defineExpose({ openPaywall })
 
 .nav-link:hover,
 .nav-link.router-link-active {
-  color: #D4AF37;
+  color: #FF6B35;
 }
 
 .nav-link.locked {
   opacity: 0.6;
-}
-
-.lock-icon {
-  font-size: 0.75rem;
 }
 
 .user-status {
@@ -143,17 +146,17 @@ defineExpose({ openPaywall })
 }
 
 .free-tag {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: #F3F4F6;
+  color: #6B7280;
 }
 
 .premium-tag {
-  background: linear-gradient(135deg, #D4AF37 0%, #F4D03F 100%);
-  color: #1a365d;
+  background: rgba(255, 107, 53, 0.12);
+  color: #FF6B35;
 }
 
 .usage-info {
-  color: rgba(255, 255, 255, 0.6);
+  color: #6B7280;
   font-size: 0.875rem;
 }
 
@@ -165,9 +168,9 @@ defineExpose({ openPaywall })
 .app-footer {
   text-align: center;
   padding: 1.5rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: #6B7280;
   font-size: 0.875rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid #E5E7EB;
 }
 
 @media (max-width: 768px) {

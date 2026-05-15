@@ -1,618 +1,935 @@
 <template>
-  <div class="monitor-page">
-    <div class="page-header">
-      <h1 class="page-title">📈 效果监测</h1>
-      <p class="page-subtitle">追踪品牌GEO评分变化，掌握竞品动态</p>
-    </div>
-    
-    <div v-if="!userStore.isPremium" class="locked-notice">
-      <div class="lock-icon">🔒</div>
-      <h2>付费功能</h2>
-      <p>效果监测需要付费版才能使用</p>
-      <button class="btn btn-primary" @click="showPaywall = true">
-        升级解锁
+  <div class="monitor-page" v-loading="pageLoading">
+    <section class="dashboard-toolbar">
+      <div class="brand-filter">
+        <span class="filter-label">监控品牌</span>
+        <el-select
+          v-model="selectedBrand"
+          class="brand-select"
+          placeholder="选择品牌"
+          size="large"
+          @change="loadDashboard"
+        >
+          <el-option
+            v-for="brand in brands"
+            :key="brand.value"
+            :label="brand.label"
+            :value="brand.value"
+          >
+            <div class="brand-option">
+              <span>{{ brand.label }}</span>
+              <small>{{ brand.industry }} · {{ brand.latest_score }}分</small>
+            </div>
+          </el-option>
+        </el-select>
+      </div>
+
+      <div class="toolbar-actions">
+        <el-segmented
+          v-model="selectedDays"
+          :options="rangeOptions"
+          size="large"
+          @change="loadDashboard"
+        />
+        <el-button type="primary" :icon="Refresh" size="large" :loading="refreshing" @click="refreshDashboard">
+          刷新
+        </el-button>
+      </div>
+    </section>
+
+    <section class="metric-grid">
+      <button
+        v-for="metric in metricCards"
+        :key="metric.key"
+        class="metric-card"
+        type="button"
+        @click="scrollTo(metric.target)"
+      >
+        <div class="metric-head">
+          <el-icon><component :is="metric.icon" /></el-icon>
+          <span>{{ metric.label }}</span>
+        </div>
+        <div class="metric-value">{{ metric.value }}</div>
+        <div class="metric-change" :class="metric.changeClass">
+          <el-icon><component :is="metric.changeIcon" /></el-icon>
+          <span>{{ metric.changeText }}</span>
+        </div>
       </button>
-    </div>
-    
-    <div v-else class="monitor-content">
-      <!-- 添加监测品牌 -->
-      <div class="add-monitor-section card">
-        <h3 class="section-title">添加监测品牌</h3>
-        <div class="add-form">
-          <input 
-            v-model="newBrand"
-            type="text"
-            class="input"
-            placeholder="输入品牌名称"
-            @keyup.enter="addMonitor"
-          />
-          <select v-model="newFrequency" class="select">
-            <option value="daily">每日</option>
-            <option value="weekly">每周</option>
-          </select>
-          <button class="btn btn-primary" @click="addMonitor" :disabled="!newBrand.trim()">
-            + 添加监测
-          </button>
+    </section>
+
+    <section ref="trendSection" class="dashboard-card trend-card">
+      <div class="section-header">
+        <div>
+          <h2>品牌GEO分数趋势</h2>
+          <p>{{ overview?.brand || selectedBrand }} · 叠加竞品趋势与预警标记</p>
         </div>
-        <div v-if="addError" class="error-text">{{ addError }}</div>
+        <el-button :icon="FullScreen" @click="openFullscreen">全屏</el-button>
       </div>
-      
-      <!-- 监测列表 -->
-      <div class="monitor-list-section card">
-        <h3 class="section-title">我的监测列表</h3>
-        <div v-if="monitors.length === 0" class="empty-state">
-          <p>暂无监测品牌，请添加</p>
+      <div ref="trendChartRef" class="trend-chart chart-surface"></div>
+    </section>
+
+    <section class="two-column">
+      <div ref="keywordSection" class="dashboard-card keyword-card">
+        <div class="section-header compact">
+          <h2>关键词渗透率</h2>
+          <el-tag type="success" effect="plain">
+            {{ keywordData?.summary?.hits || 0 }}/{{ keywordData?.summary?.total || 50 }}
+          </el-tag>
         </div>
-        <div v-else class="monitor-grid">
-          <div 
-            v-for="monitor in monitors" 
-            :key="monitor.id"
-            class="monitor-item"
-            :class="{ active: selectedMonitor && selectedMonitor.id === monitor.id }"
-            @click="selectMonitor(monitor)"
+        <div class="keyword-cloud" aria-label="关键词词云">
+          <span
+            v-for="word in keywordCloud"
+            :key="word.name"
+            class="cloud-word"
+            :style="word.style"
           >
-            <div class="monitor-header">
-              <span class="monitor-brand">{{ monitor.brand }}</span>
-              <button class="delete-btn" @click.stop="deleteMonitor(monitor.id)">×</button>
-            </div>
-            <div class="monitor-score">
-              <span class="score-value">{{ monitor.current_score || '--' }}</span>
-              <span class="score-label">分</span>
-            </div>
-            <div class="monitor-trend" :class="getTrendClass(monitor.trend)">
-              <span class="trend-icon">{{ monitor.trend > 0 ? '📈' : monitor.trend < 0 ? '📉' : '➡️' }}</span>
-              <span class="trend-value">{{ monitor.trend > 0 ? '+' : '' }}{{ monitor.trend || 0 }}</span>
-            </div>
-            <div class="monitor-meta">
-              <span class="frequency-tag">{{ monitor.frequency === 'daily' ? '每日' : '每周' }}</span>
-              <span class="last-check">{{ formatDate(monitor.last_check_at) }}</span>
-            </div>
-          </div>
+            {{ word.name }}
+          </span>
+        </div>
+        <el-table :data="keywordRows" size="small" class="compact-table" :header-cell-style="tableHeaderStyle">
+          <el-table-column prop="keyword" label="关键词" min-width="120" />
+          <el-table-column prop="rate" label="渗透率" width="90">
+            <template #default="{ row }">{{ row.rate }}%</template>
+          </el-table-column>
+          <el-table-column label="趋势" width="76">
+            <template #default="{ row }">
+              <span class="inline-trend" :class="trendClass(row.trend)">
+                {{ trendSymbol(row.trend) }}{{ Math.abs(row.trend) || '' }}
+              </span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <div ref="platformSection" class="dashboard-card platform-card">
+        <div class="section-header compact">
+          <h2>各AI平台品牌提及率</h2>
+          <el-tag effect="plain">6个平台</el-tag>
+        </div>
+        <div ref="platformChartRef" class="platform-chart chart-surface"></div>
+      </div>
+    </section>
+
+    <section ref="competitorSection" class="dashboard-card competitor-card">
+      <div class="section-header">
+        <div>
+          <h2>竞品对比</h2>
+          <p>本品 vs 竞品A vs 竞品B · 多维指标横向比较</p>
+        </div>
+        <el-button :icon="Edit">编辑</el-button>
+      </div>
+      <div class="competitor-layout">
+        <div ref="radarChartRef" class="radar-chart chart-surface"></div>
+        <div class="comparison-table-wrap">
+          <el-table :data="competitorRows" border :header-cell-style="tableHeaderStyle">
+            <el-table-column prop="dimension" label="维度" min-width="120" fixed />
+            <el-table-column
+              v-for="name in competitorNames"
+              :key="name"
+              :prop="name"
+              :label="name"
+              width="100"
+              align="center"
+            >
+              <template #default="{ row }">
+                <span :class="{ ownScore: name === selectedBrand }">{{ row[name] }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
       </div>
-      
-      <!-- 趋势图表 -->
-      <div v-if="selectedMonitor" class="chart-section card">
-        <div class="chart-header">
-          <h3 class="section-title">{{ selectedMonitor.brand }} - 评分趋势</h3>
-          <div class="chart-actions">
-            <select v-model="chartDays" class="select small" @change="loadMonitorHistory">
-              <option :value="7">近7天</option>
-              <option :value="30">近30天</option>
-              <option :value="90">近90天</option>
-            </select>
-          </div>
+    </section>
+
+    <section ref="alertSection" class="dashboard-card alert-card">
+      <div class="section-header">
+        <div>
+          <h2>预警记录</h2>
+          <p>分数波动、竞品超越与平台表现变化</p>
         </div>
-        <div ref="chartContainer" class="chart-container"></div>
-        <div v-if="historyData.length === 0" class="no-data">
-          <p>暂无历史数据</p>
-        </div>
+        <el-button :icon="Setting">设置</el-button>
       </div>
-      
-      <!-- 预警信息 -->
-      <div class="alerts-section card">
-        <h3 class="section-title">📢 最新预警</h3>
-        <div v-if="alerts.length > 0" class="alerts-list">
-          <div 
-            v-for="alert in alerts" 
-            :key="alert.id"
-            class="alert-item"
-            :class="alert.alert_type"
-          >
-            <span class="alert-icon">{{ alert.alert_type === 'rise' ? '📈' : '📉' }}</span>
-            <div class="alert-content">
-              <span class="alert-brand">{{ alert.brand }}</span>
-              <span class="alert-message">{{ alert.message }}</span>
-            </div>
-            <span class="alert-time">{{ formatDate(alert.created_at) }}</span>
-          </div>
-        </div>
-        <div v-else class="empty-state">
-          <p>暂无预警信息</p>
-        </div>
-      </div>
-    </div>
-    
-    <PaywallModal v-if="showPaywall" @close="showPaywall = false" @activated="handleActivated" />
+      <el-timeline class="alert-timeline">
+        <el-timeline-item
+          v-for="alert in alertRows"
+          :key="alert.id"
+          :type="alert.type"
+          :timestamp="formatAlertDate(alert.date)"
+          placement="top"
+        >
+          <div class="alert-title">{{ alert.title }}</div>
+          <div class="alert-description">{{ alert.description }}</div>
+        </el-timeline-item>
+      </el-timeline>
+      <el-empty v-if="alertRows.length === 0" description="当前周期暂无预警" :image-size="90" />
+    </section>
+
+    <el-dialog
+      v-model="fullscreenVisible"
+      title="品牌GEO分数趋势"
+      fullscreen
+      append-to-body
+      @opened="renderFullscreenChart"
+      @closed="disposeFullscreenChart"
+    >
+      <div ref="fullscreenChartRef" class="fullscreen-chart"></div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { useUserStore } from '../stores/user'
-import api from '../api'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import * as echarts from 'echarts'
-import PaywallModal from '../components/PaywallModal.vue'
+import {
+  Aim,
+  DataAnalysis,
+  Edit,
+  FullScreen,
+  Minus,
+  Rank,
+  Refresh,
+  Setting,
+  TrendCharts,
+  WarningFilled
+} from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import api from '../api'
+import { useUserStore } from '../stores/user'
 
 const userStore = useUserStore()
 
-const newBrand = ref('')
-const newFrequency = ref('daily')
-const addError = ref('')
-const monitors = ref([])
-const selectedMonitor = ref(null)
-const historyData = ref([])
-const alerts = ref([])
-const chartContainer = ref(null)
-const chartDays = ref(30)
-const showPaywall = ref(false)
+const rangeOptions = [
+  { label: '7天', value: 7 },
+  { label: '30天', value: 30 },
+  { label: '90天', value: 90 },
+  { label: '1年', value: 365 }
+]
 
-let chart = null
+const brands = ref([])
+const selectedBrand = ref('')
+const selectedDays = ref(30)
+const overview = ref(null)
+const keywordData = ref(null)
+const platformData = ref(null)
+const competitorData = ref(null)
+const alertRows = ref([])
+const pageLoading = ref(false)
+const refreshing = ref(false)
+const fullscreenVisible = ref(false)
+
+const trendSection = ref(null)
+const keywordSection = ref(null)
+const platformSection = ref(null)
+const competitorSection = ref(null)
+const alertSection = ref(null)
+const trendChartRef = ref(null)
+const platformChartRef = ref(null)
+const radarChartRef = ref(null)
+const fullscreenChartRef = ref(null)
+
+let trendChart = null
+let platformChart = null
+let radarChart = null
+let fullscreenChart = null
+
+const tableHeaderStyle = {
+  background: '#F8FAFC',
+  color: '#374151',
+  fontWeight: 600
+}
+
+const metricCards = computed(() => {
+  const metrics = overview.value?.metrics || {}
+  return [
+    {
+      key: 'geo_score',
+      label: 'GEO总分',
+      value: formatMetricValue(metrics.geo_score, '72'),
+      icon: TrendCharts,
+      target: trendSection,
+      ...formatChange(metrics.geo_score)
+    },
+    {
+      key: 'mention_rate',
+      label: 'AI平台提及率',
+      value: formatMetricValue(metrics.mention_rate, '67%'),
+      icon: DataAnalysis,
+      target: platformSection,
+      ...formatChange(metrics.mention_rate)
+    },
+    {
+      key: 'keyword_penetration',
+      label: '关键词渗透率',
+      value: metrics.keyword_penetration?.display || '12/50',
+      icon: Aim,
+      target: keywordSection,
+      ...formatChange(metrics.keyword_penetration)
+    },
+    {
+      key: 'competitor_rank',
+      label: '竞品排名',
+      value: metrics.competitor_rank?.display || '第3名',
+      icon: Rank,
+      target: competitorSection,
+      ...formatChange(metrics.competitor_rank, '名')
+    }
+  ]
+})
+
+const keywordRows = computed(() => keywordData.value?.table || [])
+
+const keywordCloud = computed(() => {
+  const words = keywordData.value?.cloud || []
+  const max = Math.max(...words.map(item => item.value), 1)
+  const min = Math.min(...words.map(item => item.value), 0)
+  return words.map((item, index) => {
+    const ratio = (item.value - min) / Math.max(max - min, 1)
+    const size = 14 + ratio * 14
+    const colors = ['#FF6B35', '#1A1A2E', '#00D4AA', '#6366F1', '#06B6D4']
+    return {
+      ...item,
+      style: {
+        fontSize: `${size}px`,
+        color: colors[index % colors.length],
+        fontWeight: ratio > 0.68 ? 700 : 600,
+        opacity: 0.72 + ratio * 0.28
+      }
+    }
+  })
+})
+
+const competitorRows = computed(() => competitorData.value?.table || [])
+const competitorNames = computed(() => competitorData.value?.series?.map(item => item.name) || [])
 
 onMounted(async () => {
   await userStore.checkStatus()
-  if (userStore.isPremium) {
-    await loadMonitors()
-    await loadAlerts()
-  }
+  await loadBrands()
+  window.addEventListener('resize', resizeCharts)
 })
 
 onUnmounted(() => {
-  if (chart) {
-    chart.dispose()
-  }
+  window.removeEventListener('resize', resizeCharts)
+  disposeCharts()
 })
 
-async function loadMonitors() {
+async function loadBrands() {
+  pageLoading.value = true
   try {
-    const response = await api.getMonitors()
-    monitors.value = response.data.data || []
+    const response = await api.getDashboardBrands()
+    brands.value = response.data.data || []
+    selectedBrand.value = brands.value[0]?.value || '武汉万象城'
+    await loadDashboard()
   } catch (error) {
-    console.error('加载监测列表失败:', error)
+    console.error('加载仪表盘品牌失败:', error)
+    ElMessage.error('加载仪表盘品牌失败')
+  } finally {
+    pageLoading.value = false
   }
 }
 
-async function loadAlerts() {
+async function loadDashboard() {
+  if (!selectedBrand.value) return
+  pageLoading.value = true
   try {
-    const response = await api.getAlerts(null, 10)
-    alerts.value = response.data.data || []
+    const [overviewRes, keywordRes, platformRes, competitorRes, alertRes] = await Promise.all([
+      api.getDashboardScoreTrend(selectedBrand.value, selectedDays.value),
+      api.getDashboardKeywordPenetration(selectedBrand.value, selectedDays.value),
+      api.getDashboardPlatformDistribution(selectedBrand.value, selectedDays.value),
+      api.getDashboardCompetitorComparison(selectedBrand.value, selectedDays.value),
+      api.getDashboardAlerts(selectedBrand.value, selectedDays.value)
+    ])
+
+    overview.value = overviewRes.data.data
+    keywordData.value = keywordRes.data.data
+    platformData.value = platformRes.data.data
+    competitorData.value = competitorRes.data.data
+    alertRows.value = alertRes.data.data || []
+
+    await nextTick()
+    renderCharts()
   } catch (error) {
-    console.error('加载预警失败:', error)
+    console.error('加载仪表盘失败:', error)
+    ElMessage.error('加载仪表盘失败')
+  } finally {
+    pageLoading.value = false
   }
 }
 
-async function addMonitor() {
-  if (!newBrand.value.trim()) return
-  
-  addError.value = ''
+async function refreshDashboard() {
+  if (!selectedBrand.value) return
+  refreshing.value = true
   try {
-    await api.createMonitor({
-      brand: newBrand.value.trim(),
-      frequency: newFrequency.value
+    const currentBrand = brands.value.find(item => item.value === selectedBrand.value)
+    await api.refreshDashboard({
+      brand: selectedBrand.value,
+      industry: currentBrand?.industry || '通用'
     })
-    newBrand.value = ''
-    await loadMonitors()
+    await loadDashboard()
+    ElMessage.success('仪表盘数据已刷新')
   } catch (error) {
-    addError.value = error.response?.data?.detail || '添加失败'
+    console.error('刷新仪表盘失败:', error)
+    ElMessage.error('刷新失败')
+  } finally {
+    refreshing.value = false
   }
 }
 
-async function deleteMonitor(id) {
-  if (!confirm('确定要删除该监测吗？')) return
-  
-  try {
-    await api.deleteMonitor(id)
-    if (selectedMonitor.value && selectedMonitor.value.id === id) {
-      selectedMonitor.value = null
-      historyData.value = []
-      if (chart) {
-        chart.dispose()
-        chart = null
+function renderCharts() {
+  renderTrendChart(trendChartRef.value, false)
+  renderPlatformChart()
+  renderRadarChart()
+}
+
+function renderTrendChart(container, large = false) {
+  if (!container || !overview.value?.trend) return
+  const target = large ? fullscreenChart : trendChart
+  if (target) target.dispose()
+
+  const chart = echarts.init(container)
+  const trend = overview.value.trend
+  const markPointData = trend.alert_points.map(item => ({
+    coord: [item.date, item.score],
+    value: `${item.change_percent}%`,
+    itemStyle: { color: '#FF4757' }
+  }))
+
+  chart.setOption({
+    color: ['#FF6B35', '#6366F1', '#06B6D4'],
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: '#FFFFFF',
+      borderColor: '#E5E7EB',
+      borderWidth: 1,
+      textStyle: { color: '#374151' },
+      extraCssText: 'box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12); border-radius: 8px;'
+    },
+    legend: {
+      bottom: 0,
+      textStyle: { color: '#374151' }
+    },
+    grid: {
+      top: 24,
+      left: 36,
+      right: 24,
+      bottom: 54,
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: trend.dates,
+      axisLine: { lineStyle: { color: '#E5E7EB' } },
+      axisTick: { show: false },
+      axisLabel: { color: '#6B7280', fontSize: 12 }
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      max: 100,
+      axisLabel: { color: '#6B7280', fontSize: 12 },
+      splitLine: { lineStyle: { color: '#E5E7EB', type: 'dashed' } }
+    },
+    series: trend.series.map((serie, index) => ({
+      name: serie.name,
+      type: 'line',
+      smooth: true,
+      data: serie.data,
+      symbol: 'circle',
+      symbolSize: index === 0 ? 7 : 5,
+      lineStyle: {
+        width: index === 0 ? 3 : 2,
+        type: serie.type === 'dashed' ? 'dashed' : 'solid'
+      },
+      areaStyle: index === 0 ? { color: 'rgba(255, 107, 53, 0.1)' } : undefined,
+      markPoint: index === 0 ? {
+        symbol: 'circle',
+        symbolSize: 12,
+        data: markPointData
+      } : undefined
+    }))
+  })
+
+  if (large) {
+    fullscreenChart = chart
+  } else {
+    trendChart = chart
+  }
+}
+
+function renderPlatformChart() {
+  if (!platformChartRef.value || !platformData.value?.platforms) return
+  if (platformChart) platformChart.dispose()
+  platformChart = echarts.init(platformChartRef.value)
+  const platforms = platformData.value.platforms
+
+  platformChart.setOption({
+    grid: { top: 8, left: 74, right: 24, bottom: 20 },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      backgroundColor: '#FFFFFF',
+      borderColor: '#E5E7EB',
+      textStyle: { color: '#374151' }
+    },
+    xAxis: {
+      type: 'value',
+      max: 100,
+      axisLabel: { formatter: '{value}%', color: '#6B7280' },
+      splitLine: { lineStyle: { color: '#E5E7EB', type: 'dashed' } }
+    },
+    yAxis: {
+      type: 'category',
+      data: platforms.map(item => item.name),
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: { color: '#374151', fontSize: 12 }
+    },
+    series: [
+      {
+        type: 'bar',
+        data: platforms.map(item => item.rate),
+        barWidth: 14,
+        itemStyle: {
+          color: '#FF6B35',
+          borderRadius: [0, 4, 4, 0]
+        },
+        label: {
+          show: true,
+          position: 'right',
+          formatter: '{c}%',
+          color: '#374151',
+          fontSize: 12
+        }
       }
-    }
-    await loadMonitors()
-  } catch (error) {
-    console.error('删除监测失败:', error)
-  }
-}
-
-async function selectMonitor(monitor) {
-  selectedMonitor.value = monitor
-  chartDays.value = 30
-  await loadMonitorHistory()
-}
-
-async function loadMonitorHistory() {
-  if (!selectedMonitor.value) return
-  
-  try {
-    const response = await api.getMonitorHistory(selectedMonitor.value.id, chartDays.value)
-    historyData.value = response.data.data || []
-    renderChart()
-  } catch (error) {
-    console.error('加载历史数据失败:', error)
-  }
-}
-
-function renderChart() {
-  nextTick(() => {
-    if (!chartContainer.value || historyData.value.length === 0) return
-    
-    if (chart) {
-      chart.dispose()
-    }
-    
-    chart = echarts.init(chartContainer.value)
-    
-    const dates = historyData.value.map(d => {
-      const date = new Date(d.created_at)
-      return `${date.getMonth() + 1}/${date.getDate()}`
-    })
-    const scores = historyData.value.map(d => d.geo_score || 0)
-    
-    const option = {
-      tooltip: {
-        trigger: 'axis',
-        formatter: (params) => {
-          const p = params[0]
-          return `${p.name}<br/>GEO评分: <b>${p.value}</b>`
-        }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        top: '10%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        boundaryGap: false,
-        data: dates,
-        axisLabel: {
-          color: 'rgba(255,255,255,0.6)'
-        },
-        axisLine: {
-          lineStyle: {
-            color: 'rgba(255,255,255,0.2)'
-          }
-        }
-      },
-      yAxis: {
-        type: 'value',
-        min: 0,
-        max: 100,
-        axisLabel: {
-          color: 'rgba(255,255,255,0.6)'
-        },
-        splitLine: {
-          lineStyle: {
-            color: 'rgba(255,255,255,0.1)'
-          }
-        }
-      },
-      series: [
-        {
-          name: 'GEO评分',
-          type: 'line',
-          smooth: true,
-          symbol: 'circle',
-          symbolSize: 8,
-          lineStyle: {
-            color: '#D4AF37',
-            width: 3
-          },
-          itemStyle: {
-            color: '#D4AF37'
-          },
-          areaStyle: {
-            color: {
-              type: 'linear',
-              x: 0, y: 0, x2: 0, y2: 1,
-              colorStops: [
-                { offset: 0, color: 'rgba(212, 175, 55, 0.3)' },
-                { offset: 1, color: 'rgba(212, 175, 55, 0)' }
-              ]
-            }
-          },
-          data: scores
-        }
-      ]
-    }
-    
-    chart.setOption(option)
+    ]
   })
 }
 
-function getTrendClass(trend) {
-  if (trend > 0) return 'trend-up'
-  if (trend < 0) return 'trend-down'
+function renderRadarChart() {
+  if (!radarChartRef.value || !competitorData.value?.series) return
+  if (radarChart) radarChart.dispose()
+  radarChart = echarts.init(radarChartRef.value)
+
+  radarChart.setOption({
+    color: competitorData.value.series.map(item => item.color),
+    tooltip: {
+      backgroundColor: '#FFFFFF',
+      borderColor: '#E5E7EB',
+      textStyle: { color: '#374151' }
+    },
+    legend: {
+      bottom: 0,
+      textStyle: { color: '#374151' }
+    },
+    radar: {
+      radius: '62%',
+      indicator: competitorData.value.indicators,
+      axisName: { color: '#374151', fontSize: 12 },
+      splitLine: { lineStyle: { color: '#E5E7EB' } },
+      splitArea: { areaStyle: { color: ['#FFFFFF', '#F8FAFC'] } },
+      axisLine: { lineStyle: { color: '#E5E7EB' } }
+    },
+    series: [
+      {
+        type: 'radar',
+        data: competitorData.value.series.map(item => ({
+          name: item.name,
+          value: item.values,
+          areaStyle: { opacity: item.name === selectedBrand.value ? 0.16 : 0.06 }
+        }))
+      }
+    ]
+  })
+}
+
+function renderFullscreenChart() {
+  nextTick(() => renderTrendChart(fullscreenChartRef.value, true))
+}
+
+function disposeFullscreenChart() {
+  if (fullscreenChart) {
+    fullscreenChart.dispose()
+    fullscreenChart = null
+  }
+}
+
+function disposeCharts() {
+  ;[trendChart, platformChart, radarChart, fullscreenChart].forEach(chart => {
+    if (chart) chart.dispose()
+  })
+}
+
+function resizeCharts() {
+  ;[trendChart, platformChart, radarChart, fullscreenChart].forEach(chart => {
+    if (chart) chart.resize()
+  })
+}
+
+function openFullscreen() {
+  fullscreenVisible.value = true
+}
+
+function scrollTo(targetRef) {
+  targetRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function formatMetricValue(metric, fallback) {
+  if (!metric) return fallback
+  if (metric.display) return metric.display
+  return `${metric.value}${metric.suffix || ''}`
+}
+
+function formatChange(metric, suffixOverride = null) {
+  const change = metric?.change ?? 0
+  const direction = metric?.direction || 'flat'
+  const positive = metric?.positive
+  const suffix = suffixOverride || metric?.suffix || ''
+  const absChange = Math.abs(change)
+  const changeText = change === 0 ? '持平 较上期' : `${absChange}${suffix} 较上期`
+  return {
+    changeText,
+    changeClass: positive === true ? 'change-up' : positive === false ? 'change-down' : 'change-flat',
+    changeIcon: direction === 'up' ? TrendCharts : direction === 'down' ? WarningFilled : Minus
+  }
+}
+
+function trendClass(value) {
+  if (value > 0) return 'trend-up'
+  if (value < 0) return 'trend-down'
   return 'trend-flat'
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return '未检测'
-  const date = new Date(dateStr)
-  return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
+function trendSymbol(value) {
+  if (value > 0) return '↑'
+  if (value < 0) return '↓'
+  return '→'
 }
 
-function handleActivated() {
-  showPaywall.value = false
-  userStore.checkStatus()
-  loadMonitors()
+function formatAlertDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 </script>
 
 <style scoped>
 .monitor-page {
-  max-width: 1200px;
+  width: min(1200px, 100%);
   margin: 0 auto;
+  color: #1A1A2E;
 }
 
-.page-header {
-  text-align: center;
-  margin-bottom: 2rem;
-}
-
-.page-title {
-  font-size: 2rem;
-  color: #fff;
-  margin-bottom: 0.5rem;
-}
-
-.page-subtitle {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.locked-notice {
-  text-align: center;
-  padding: 4rem 2rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius);
-}
-
-.lock-icon {
-  font-size: 4rem;
-  margin-bottom: 1rem;
-}
-
-.locked-notice h2 {
-  color: #fff;
-  margin-bottom: 0.5rem;
-}
-
-.locked-notice p {
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 1.5rem;
-}
-
-.add-monitor-section {
-  margin-bottom: 1.5rem;
-}
-
-.add-form {
+.dashboard-toolbar {
+  min-height: 48px;
+  padding: 12px 16px;
+  background: #EEF2F7;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
   display: flex;
-  gap: 1rem;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
-.add-form .input {
-  flex: 1;
+.brand-filter,
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.add-form .select {
-  width: 120px;
-}
-
-.add-form .btn {
+.filter-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
   white-space: nowrap;
 }
 
-.error-text {
-  color: #e53e3e;
-  font-size: 0.875rem;
-  margin-top: 0.5rem;
+.brand-select {
+  width: 240px;
 }
 
-.monitor-list-section {
-  margin-bottom: 1.5rem;
+.brand-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-.empty-state {
-  text-align: center;
-  padding: 2rem;
-  color: rgba(255, 255, 255, 0.5);
+.brand-option small {
+  color: #6B7280;
 }
 
-.monitor-grid {
+.metric-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
 }
 
-.monitor-item {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius);
-  padding: 1rem;
+.metric-card {
+  min-height: 148px;
+  padding: 24px;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  text-align: left;
   cursor: pointer;
-  transition: all 0.2s;
-  border: 2px solid transparent;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
-.monitor-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+.metric-card:hover {
+  border-color: #FF6B35;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(255, 107, 53, 0.14);
 }
 
-.monitor-item.active {
-  border-color: #D4AF37;
-  background: rgba(212, 175, 55, 0.1);
-}
-
-.monitor-header {
+.metric-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.75rem;
-}
-
-.monitor-brand {
+  gap: 8px;
+  font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: #6B7280;
 }
 
-.delete-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 1rem;
-  line-height: 1;
-  transition: all 0.2s;
+.metric-head .el-icon {
+  color: #FF6B35;
+  font-size: 18px;
 }
 
-.delete-btn:hover {
-  background: rgba(229, 62, 62, 0.3);
-  color: #e53e3e;
-}
-
-.monitor-score {
-  margin-bottom: 0.5rem;
-}
-
-.score-value {
-  font-size: 2rem;
+.metric-value {
+  margin-top: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 32px;
+  line-height: 1.2;
   font-weight: 700;
-  color: #D4AF37;
+  color: #1A1A2E;
 }
 
-.score-label {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.875rem;
-}
-
-.monitor-trend {
-  display: flex;
+.metric-change {
+  margin-top: 10px;
+  display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  margin-bottom: 0.5rem;
-}
-
-.monitor-trend.trend-up {
-  color: #48bb78;
-}
-
-.monitor-trend.trend-down {
-  color: #f56565;
-}
-
-.monitor-trend.trend-flat {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.trend-icon {
-  font-size: 1rem;
-}
-
-.trend-value {
+  gap: 4px;
+  font-size: 13px;
   font-weight: 600;
 }
 
-.monitor-meta {
+.change-up,
+.trend-up {
+  color: #00D4AA;
+}
+
+.change-down,
+.trend-down {
+  color: #FF4757;
+}
+
+.change-flat,
+.trend-flat {
+  color: #6B7280;
+}
+
+.dashboard-card {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  margin-bottom: 24px;
+}
+
+.section-header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.frequency-tag {
-  background: rgba(212, 175, 55, 0.2);
-  color: #D4AF37;
-  padding: 0.125rem 0.5rem;
-  border-radius: 10px;
-}
-
-.chart-section {
-  margin-bottom: 1.5rem;
-}
-
-.chart-header {
-  display: flex;
-  justify-content: space-between;
+.section-header.compact {
   align-items: center;
-  margin-bottom: 1rem;
 }
 
-.chart-actions .select.small {
-  width: 100px;
-  padding: 0.5rem;
+.section-header h2 {
+  font-size: 20px;
+  line-height: 1.3;
+  font-weight: 600;
+  color: #1A1A2E;
+  margin: 0;
 }
 
-.chart-container {
-  height: 300px;
+.section-header p {
+  margin: 6px 0 0;
+  color: #6B7280;
+  font-size: 14px;
+}
+
+.chart-surface {
+  width: 100%;
+  min-height: 320px;
+}
+
+.trend-chart {
+  height: 380px;
+}
+
+.two-column {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.keyword-cloud {
+  min-height: 162px;
+  padding: 18px;
+  margin-bottom: 18px;
+  border: 1px dashed #E5E7EB;
+  border-radius: 8px;
+  background: #F8FAFC;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-content: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.cloud-word {
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.platform-chart {
+  height: 348px;
+}
+
+.compact-table {
   width: 100%;
 }
 
-.no-data {
-  text-align: center;
-  padding: 2rem;
-  color: rgba(255, 255, 255, 0.5);
+.inline-trend {
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-.alerts-section {
-  margin-bottom: 1.5rem;
-}
-
-.alerts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.alert-item {
-  display: flex;
+.competitor-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
+  gap: 24px;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius-sm);
 }
 
-.alert-item.rise {
-  border-left: 3px solid #48bb78;
+.radar-chart {
+  height: 360px;
 }
 
-.alert-item.drop {
-  border-left: 3px solid #f56565;
+.comparison-table-wrap {
+  overflow-x: auto;
 }
 
-.alert-icon {
-  font-size: 1.5rem;
+.ownScore {
+  color: #FF6B35;
+  font-weight: 700;
 }
 
-.alert-content {
-  flex: 1;
+.alert-timeline {
+  padding-top: 4px;
 }
 
-.alert-brand {
+.alert-title {
+  font-size: 16px;
   font-weight: 600;
-  color: #fff;
-  margin-right: 0.5rem;
+  color: #1A1A2E;
 }
 
-.alert-message {
-  color: rgba(255, 255, 255, 0.7);
+.alert-description {
+  margin-top: 6px;
+  color: #6B7280;
+  font-size: 14px;
 }
 
-.alert-time {
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 0.875rem;
+.fullscreen-chart {
+  width: 100%;
+  height: calc(100vh - 110px);
 }
 
-@media (max-width: 768px) {
-  .add-form {
+:deep(.el-button--primary) {
+  --el-button-bg-color: #FF6B35;
+  --el-button-border-color: #FF6B35;
+  --el-button-hover-bg-color: #F05D2C;
+  --el-button-hover-border-color: #F05D2C;
+  --el-button-active-bg-color: #E24F20;
+  --el-button-active-border-color: #E24F20;
+}
+
+:deep(.el-segmented) {
+  --el-segmented-item-selected-bg-color: #FF6B35;
+  --el-segmented-item-selected-color: #FFFFFF;
+}
+
+@media (max-width: 1023px) {
+  .dashboard-toolbar {
+    align-items: stretch;
     flex-direction: column;
   }
-  
-  .add-form .select,
-  .add-form .btn {
+
+  .toolbar-actions {
+    justify-content: space-between;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .two-column,
+  .competitor-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .dashboard-toolbar,
+  .brand-filter,
+  .toolbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .brand-select {
     width: 100%;
   }
-  
-  .monitor-grid {
-    grid-template-columns: 1fr 1fr;
+
+  .metric-grid {
+    gap: 12px;
+  }
+
+  .metric-card,
+  .dashboard-card {
+    padding: 16px;
+  }
+
+  .metric-value {
+    font-size: 26px;
+  }
+
+  .trend-card {
+    overflow-x: auto;
+  }
+
+  .trend-chart {
+    min-width: 680px;
+  }
+
+  .section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chart-surface {
+    min-height: 300px;
   }
 }
 </style>

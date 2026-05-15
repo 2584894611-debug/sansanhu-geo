@@ -11,6 +11,7 @@ import re
 import sqlite3
 import hashlib
 import secrets
+import math
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from functools import lru_cache
@@ -132,6 +133,27 @@ def init_database():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id),
                 UNIQUE(user_id, brand)
+            )
+        ''')
+
+        # 监控仪表盘快照表
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS dashboard_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand TEXT NOT NULL,
+                industry TEXT,
+                snapshot_date TEXT NOT NULL,
+                geo_score INTEGER,
+                mention_rate INTEGER,
+                keyword_hits INTEGER,
+                keyword_total INTEGER,
+                competitor_rank INTEGER,
+                platform_distribution TEXT,
+                keyword_penetration TEXT,
+                competitor_comparison TEXT,
+                dimension_scores TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(brand, snapshot_date)
             )
         ''')
         
@@ -454,6 +476,389 @@ def get_monitor_history(device_id: str, subscription_id: int, days: int = 30) ->
         ''', (subscription["brand"], days))
         
         return [dict(row) for row in c.fetchall()]
+
+# ==================== 监控仪表盘数据 ====================
+DASHBOARD_PLATFORMS = ["DeepSeek", "豆包", "文心一言", "Kimi", "ChatGPT", "通义千问"]
+DASHBOARD_DEFAULT_BRANDS = [
+    {"brand": "武汉万象城", "industry": "商场"},
+    {"brand": "武汉K11", "industry": "商场"},
+    {"brand": "爱黑马", "industry": "传媒广告"}
+]
+DASHBOARD_KEYWORD_POOL = [
+    "武汉商场", "购物中心", "逛街好去处", "商场推荐", "亲子活动", "城市地标",
+    "高端零售", "美食聚会", "周末去哪儿", "品牌活动", "新店首发", "会员权益"
+]
+DASHBOARD_DIMENSIONS = ["总分", "搜索可见度", "结构化数据", "AI可引用性", "跨平台一致性", "知识图谱覆盖"]
+
+def stable_int(seed: str, minimum: int, maximum: int) -> int:
+    """生成稳定的伪随机整数，保证同一品牌数据可复现"""
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    value = int(digest[:8], 16)
+    return minimum + value % (maximum - minimum + 1)
+
+def clamp_score(value: float, minimum: int = 0, maximum: int = 100) -> int:
+    return max(minimum, min(maximum, int(round(value))))
+
+def get_dashboard_known_brands(device_id: str) -> List[Dict[str, Any]]:
+    """获取用户已检测/监控过的品牌；无数据时返回示例品牌"""
+    user = get_or_create_user(device_id)
+    brands: Dict[str, Dict[str, Any]] = {}
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT brand, COALESCE(industry, '通用') as industry, geo_score
+            FROM analysis_records
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+        ''', (user["id"],))
+        for row in c.fetchall():
+            if row["brand"] and row["brand"] not in brands:
+                brands[row["brand"]] = {
+                    "brand": row["brand"],
+                    "industry": row["industry"] or "通用",
+                    "latest_score": row["geo_score"] or None
+                }
+        
+        c.execute('''
+            SELECT brand
+            FROM monitor_subscriptions
+            WHERE user_id = ? AND is_active = 1
+            ORDER BY created_at DESC
+        ''', (user["id"],))
+        for row in c.fetchall():
+            if row["brand"] and row["brand"] not in brands:
+                brands[row["brand"]] = {
+                    "brand": row["brand"],
+                    "industry": "通用",
+                    "latest_score": None
+                }
+    
+    if not brands:
+        for item in DASHBOARD_DEFAULT_BRANDS:
+            brands[item["brand"]] = {
+                "brand": item["brand"],
+                "industry": item["industry"],
+                "latest_score": None
+            }
+    
+    result = []
+    for item in brands.values():
+        latest = item.get("latest_score")
+        if latest is None:
+            latest = generate_dashboard_snapshot(item["brand"], item.get("industry", "通用"), datetime.now().date())["geo_score"]
+        result.append({
+            "label": item["brand"],
+            "value": item["brand"],
+            "industry": item.get("industry", "通用"),
+            "latest_score": latest
+        })
+    return result
+
+def get_brand_industry(brand: str, device_id: str = "default") -> str:
+    """优先从历史记录中读取行业，无记录时使用默认行业"""
+    user = get_or_create_user(device_id)
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT industry FROM analysis_records
+            WHERE user_id = ? AND brand = ? AND industry IS NOT NULL AND industry != ''
+            ORDER BY created_at DESC LIMIT 1
+        ''', (user["id"], brand))
+        row = c.fetchone()
+        if row:
+            return row["industry"]
+    for item in DASHBOARD_DEFAULT_BRANDS:
+        if item["brand"] == brand:
+            return item["industry"]
+    return "通用"
+
+def generate_dashboard_snapshot(brand: str, industry: str, day) -> Dict[str, Any]:
+    """生成一日仪表盘快照。真实数据接入前用稳定模拟数据支撑产品闭环。"""
+    day_index = day.toordinal()
+    seed_base = f"{brand}-{day.isoformat()}"
+    brand_seed = stable_int(brand, 0, 100)
+    base_score = 62 + brand_seed % 18
+    wave = math.sin(day_index / 4 + brand_seed) * 5 + math.cos(day_index / 9 + brand_seed) * 3
+    geo_score = clamp_score(base_score + wave, 35, 92)
+    mention_rate = clamp_score(geo_score - 8 + stable_int(seed_base + "mention", -3, 8), 18, 96)
+    keyword_total = 50
+    keyword_hits = max(1, min(keyword_total, round(keyword_total * (mention_rate / 100) * 0.36)))
+    competitor_rank = stable_int(seed_base + "rank", 1, 5)
+    
+    platforms = []
+    for index, platform in enumerate(DASHBOARD_PLATFORMS):
+        rate = clamp_score(mention_rate + stable_int(f"{seed_base}-{platform}", -18, 14), 8, 96)
+        platforms.append({
+            "name": platform,
+            "rate": rate,
+            "trend": stable_int(f"{seed_base}-{platform}-trend", -6, 8),
+            "rank": min(5, max(1, stable_int(f"{seed_base}-{platform}-rank", 1, 4)))
+        })
+    
+    keywords = []
+    for index, keyword in enumerate(DASHBOARD_KEYWORD_POOL):
+        rate = clamp_score(mention_rate + stable_int(f"{seed_base}-{keyword}", -28, 17), 10, 96)
+        keywords.append({
+            "keyword": keyword,
+            "rate": rate,
+            "trend": stable_int(f"{seed_base}-{keyword}-trend", -8, 9),
+            "frequency": max(12, rate + stable_int(f"{seed_base}-{keyword}-freq", -8, 12))
+        })
+    keywords.sort(key=lambda item: item["rate"], reverse=True)
+    
+    dimensions = {
+        "搜索可见度": clamp_score(geo_score + stable_int(seed_base + "vis", -5, 8), 0, 100),
+        "结构化数据": clamp_score(geo_score + stable_int(seed_base + "structured", -2, 13), 0, 100),
+        "AI可引用性": clamp_score(geo_score + stable_int(seed_base + "cite", -10, 7), 0, 100),
+        "跨平台一致性": clamp_score(geo_score + stable_int(seed_base + "consistent", -8, 9), 0, 100),
+        "知识图谱覆盖": clamp_score(geo_score + stable_int(seed_base + "kg", -18, 6), 0, 100)
+    }
+    
+    competitor_a_score = clamp_score(geo_score + stable_int(seed_base + "comp-a", -7, 12), 0, 100)
+    competitor_b_score = clamp_score(geo_score + stable_int(seed_base + "comp-b", -14, 7), 0, 100)
+    competitor_comparison = [
+        {
+            "name": brand,
+            "color": "#FF6B35",
+            "values": [geo_score, dimensions["搜索可见度"], dimensions["结构化数据"], dimensions["AI可引用性"], dimensions["跨平台一致性"], dimensions["知识图谱覆盖"]]
+        },
+        {
+            "name": "竞品A",
+            "color": "#6366F1",
+            "values": [
+                competitor_a_score,
+                clamp_score(competitor_a_score + 4, 0, 100),
+                clamp_score(competitor_a_score + 8, 0, 100),
+                clamp_score(competitor_a_score - 2, 0, 100),
+                clamp_score(competitor_a_score + 3, 0, 100),
+                clamp_score(competitor_a_score - 5, 0, 100)
+            ]
+        },
+        {
+            "name": "竞品B",
+            "color": "#06B6D4",
+            "values": [
+                competitor_b_score,
+                clamp_score(competitor_b_score - 3, 0, 100),
+                clamp_score(competitor_b_score + 2, 0, 100),
+                clamp_score(competitor_b_score - 6, 0, 100),
+                clamp_score(competitor_b_score + 1, 0, 100),
+                clamp_score(competitor_b_score - 8, 0, 100)
+            ]
+        }
+    ]
+    
+    return {
+        "brand": brand,
+        "industry": industry,
+        "snapshot_date": day.isoformat(),
+        "geo_score": geo_score,
+        "mention_rate": mention_rate,
+        "keyword_hits": keyword_hits,
+        "keyword_total": keyword_total,
+        "competitor_rank": competitor_rank,
+        "platform_distribution": platforms,
+        "keyword_penetration": keywords,
+        "competitor_comparison": competitor_comparison,
+        "dimension_scores": dimensions
+    }
+
+def ensure_dashboard_snapshot(brand: str, industry: str, day) -> Dict[str, Any]:
+    """确保指定日期有快照，写入 SQLite 后返回"""
+    day_text = day.isoformat()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT * FROM dashboard_snapshots
+            WHERE brand = ? AND snapshot_date = ?
+        ''', (brand, day_text))
+        row = c.fetchone()
+        if row:
+            result = dict(row)
+            result["platform_distribution"] = json.loads(result["platform_distribution"])
+            result["keyword_penetration"] = json.loads(result["keyword_penetration"])
+            result["competitor_comparison"] = json.loads(result["competitor_comparison"])
+            result["dimension_scores"] = json.loads(result["dimension_scores"])
+            return result
+        
+        snapshot = generate_dashboard_snapshot(brand, industry, day)
+        c.execute('''
+            INSERT OR REPLACE INTO dashboard_snapshots
+            (brand, industry, snapshot_date, geo_score, mention_rate, keyword_hits, keyword_total,
+             competitor_rank, platform_distribution, keyword_penetration, competitor_comparison, dimension_scores)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            snapshot["brand"],
+            snapshot["industry"],
+            snapshot["snapshot_date"],
+            snapshot["geo_score"],
+            snapshot["mention_rate"],
+            snapshot["keyword_hits"],
+            snapshot["keyword_total"],
+            snapshot["competitor_rank"],
+            json.dumps(snapshot["platform_distribution"], ensure_ascii=False),
+            json.dumps(snapshot["keyword_penetration"], ensure_ascii=False),
+            json.dumps(snapshot["competitor_comparison"], ensure_ascii=False),
+            json.dumps(snapshot["dimension_scores"], ensure_ascii=False)
+        ))
+        conn.commit()
+        return snapshot
+
+def get_dashboard_snapshots(brand: str, days: int, device_id: str = "default") -> List[Dict[str, Any]]:
+    """获取趋势范围内的仪表盘快照"""
+    days = min(max(days, 7), 365)
+    industry = get_brand_industry(brand, device_id)
+    today = datetime.now().date()
+    return [
+        ensure_dashboard_snapshot(brand, industry, today - timedelta(days=offset))
+        for offset in range(days - 1, -1, -1)
+    ]
+
+def summarize_metric(current: float, previous: float, suffix: str = "", reverse_good: bool = False) -> Dict[str, Any]:
+    change = round(current - previous, 1)
+    good = change >= 0
+    if reverse_good:
+        good = change <= 0
+    return {
+        "value": current,
+        "change": change,
+        "suffix": suffix,
+        "direction": "up" if change > 0 else "down" if change < 0 else "flat",
+        "positive": good if change != 0 else None
+    }
+
+def get_dashboard_overview_data(brand: str, days: int, device_id: str = "default") -> Dict[str, Any]:
+    snapshots = get_dashboard_snapshots(brand, days, device_id)
+    current = snapshots[-1]
+    previous = snapshots[-8] if len(snapshots) >= 8 else snapshots[0]
+    
+    dates = [item["snapshot_date"][5:] for item in snapshots]
+    brand_scores = [item["geo_score"] for item in snapshots]
+    comp_a_scores = [item["competitor_comparison"][1]["values"][0] for item in snapshots]
+    comp_b_scores = [item["competitor_comparison"][2]["values"][0] for item in snapshots]
+    
+    alert_points = []
+    for index, item in enumerate(snapshots[1:], start=1):
+        last_score = snapshots[index - 1]["geo_score"]
+        change_percent = abs(item["geo_score"] - last_score) / max(last_score, 1) * 100
+        if change_percent >= 5:
+            alert_points.append({
+                "date": item["snapshot_date"][5:],
+                "score": item["geo_score"],
+                "change_percent": round(change_percent, 1)
+            })
+    
+    return {
+        "brand": brand,
+        "days": days,
+        "updated_at": datetime.now().isoformat(),
+        "metrics": {
+            "geo_score": summarize_metric(current["geo_score"], previous["geo_score"], "分"),
+            "mention_rate": summarize_metric(current["mention_rate"], previous["mention_rate"], "%"),
+            "keyword_penetration": {
+                **summarize_metric(current["keyword_hits"], previous["keyword_hits"], "个"),
+                "total": current["keyword_total"],
+                "display": f"{current['keyword_hits']}/{current['keyword_total']}"
+            },
+            "competitor_rank": {
+                **summarize_metric(previous["competitor_rank"], current["competitor_rank"], "名"),
+                "value": current["competitor_rank"],
+                "display": f"第{current['competitor_rank']}名"
+            }
+        },
+        "trend": {
+            "dates": dates,
+            "series": [
+                {"name": brand, "data": brand_scores, "color": "#FF6B35", "type": "solid"},
+                {"name": "竞品A", "data": comp_a_scores, "color": "#6366F1", "type": "dashed"},
+                {"name": "竞品B", "data": comp_b_scores, "color": "#06B6D4", "type": "dashed"}
+            ],
+            "alert_points": alert_points
+        },
+        "dimensions": current["dimension_scores"]
+    }
+
+def get_keyword_penetration_data(brand: str, days: int, device_id: str = "default") -> Dict[str, Any]:
+    current = get_dashboard_snapshots(brand, days, device_id)[-1]
+    keywords = current["keyword_penetration"]
+    return {
+        "brand": brand,
+        "summary": {
+            "hits": current["keyword_hits"],
+            "total": current["keyword_total"],
+            "rate": round(current["keyword_hits"] / current["keyword_total"] * 100, 1)
+        },
+        "cloud": [
+            {"name": item["keyword"], "value": item["frequency"], "rate": item["rate"]}
+            for item in keywords
+        ],
+        "table": keywords[:6]
+    }
+
+def get_platform_distribution_data(brand: str, days: int, device_id: str = "default") -> Dict[str, Any]:
+    current = get_dashboard_snapshots(brand, days, device_id)[-1]
+    platforms = sorted(current["platform_distribution"], key=lambda item: item["rate"], reverse=True)
+    return {
+        "brand": brand,
+        "platforms": platforms
+    }
+
+def get_competitor_comparison_data(brand: str, days: int, device_id: str = "default") -> Dict[str, Any]:
+    current = get_dashboard_snapshots(brand, days, device_id)[-1]
+    competitors = current["competitor_comparison"]
+    rows = []
+    for index, dimension in enumerate(DASHBOARD_DIMENSIONS):
+        row = {"dimension": dimension}
+        for competitor in competitors:
+            row[competitor["name"]] = competitor["values"][index]
+        rows.append(row)
+    
+    return {
+        "brand": brand,
+        "indicators": [{"name": name, "max": 100} for name in DASHBOARD_DIMENSIONS],
+        "series": competitors,
+        "table": rows
+    }
+
+def get_dashboard_alerts_data(brand: str, days: int, device_id: str = "default") -> List[Dict[str, Any]]:
+    snapshots = get_dashboard_snapshots(brand, days, device_id)
+    alerts = []
+    for index, item in enumerate(snapshots[1:], start=1):
+        prev = snapshots[index - 1]
+        diff = item["geo_score"] - prev["geo_score"]
+        change_percent = abs(diff) / max(prev["geo_score"], 1) * 100
+        if change_percent >= 5:
+            alerts.append({
+                "id": f"{item['snapshot_date']}-score",
+                "type": "danger" if diff < 0 else "success",
+                "date": item["snapshot_date"],
+                "title": f"GEO分数{'下降' if diff < 0 else '上升'}{round(change_percent, 1)}%",
+                "description": f"{prev['geo_score']} -> {item['geo_score']}，建议重点查看平台提及率和关键词渗透变化。"
+            })
+    
+    current = snapshots[-1]
+    if current["competitor_comparison"][1]["values"][0] > current["geo_score"]:
+        alerts.append({
+            "id": f"{current['snapshot_date']}-competitor",
+            "type": "danger",
+            "date": current["snapshot_date"],
+            "title": "竞品A总分超过本品",
+            "description": f"竞品A: {current['competitor_comparison'][1]['values'][0]} > 本品: {current['geo_score']}，需要补强结构化数据和AI可引用内容。"
+        })
+    
+    top_platform = max(current["platform_distribution"], key=lambda item: item["trend"])
+    if top_platform["trend"] > 4:
+        alerts.append({
+            "id": f"{current['snapshot_date']}-platform",
+            "type": "success",
+            "date": current["snapshot_date"],
+            "title": f"{top_platform['name']}提及率明显提升",
+            "description": f"较上期提升{top_platform['trend']}%，可复用该平台内容策略到其他AI平台。"
+        })
+    
+    alerts.sort(key=lambda item: item["date"], reverse=True)
+    return alerts[:6]
 
 # ==================== 行业数据 ====================
 INDUSTRIES_DATA = [
@@ -967,6 +1372,84 @@ async def get_trend(brand: str = Query(...), days: int = Query(default=30)):
     """获取品牌评分趋势"""
     trend = get_brand_score_trend(brand, days)
     return {"success": True, "brand": brand, "data": trend}
+
+@app.get("/api/v1/dashboard/brands")
+async def get_dashboard_brands(device_id: str = Query(default="default")):
+    """获取仪表盘品牌列表"""
+    brands = get_dashboard_known_brands(device_id)
+    return {"success": True, "data": brands}
+
+@app.get("/api/v1/dashboard/score-trend")
+async def get_dashboard_score_trend(
+    brand: str = Query(...),
+    days: int = Query(default=30),
+    device_id: str = Query(default="default")
+):
+    """获取监控仪表盘总览与分数趋势"""
+    data = get_dashboard_overview_data(brand, days, device_id)
+    return {"success": True, "data": data}
+
+@app.get("/api/v1/dashboard/keyword-penetration")
+async def get_dashboard_keyword_penetration(
+    brand: str = Query(...),
+    days: int = Query(default=30),
+    device_id: str = Query(default="default")
+):
+    """获取关键词渗透率数据"""
+    data = get_keyword_penetration_data(brand, days, device_id)
+    return {"success": True, "data": data}
+
+@app.get("/api/v1/dashboard/platform-distribution")
+async def get_dashboard_platform_distribution(
+    brand: str = Query(...),
+    days: int = Query(default=30),
+    device_id: str = Query(default="default")
+):
+    """获取AI平台提及率分布"""
+    data = get_platform_distribution_data(brand, days, device_id)
+    return {"success": True, "data": data}
+
+@app.get("/api/v1/dashboard/competitor-comparison")
+async def get_dashboard_competitor_comparison(
+    brand: str = Query(...),
+    days: int = Query(default=30),
+    device_id: str = Query(default="default")
+):
+    """获取竞品对比数据"""
+    data = get_competitor_comparison_data(brand, days, device_id)
+    return {"success": True, "data": data}
+
+@app.get("/api/v1/dashboard/alerts")
+async def get_dashboard_alerts(
+    brand: str = Query(...),
+    days: int = Query(default=30),
+    device_id: str = Query(default="default")
+):
+    """获取仪表盘预警时间线"""
+    data = get_dashboard_alerts_data(brand, days, device_id)
+    return {"success": True, "data": data}
+
+class DashboardRefreshRequest(BaseModel):
+    """手动刷新仪表盘请求"""
+    brand: str = Field(..., description="品牌名称")
+    industry: str = Field(default="通用", description="行业")
+
+@app.post("/api/v1/dashboard/refresh")
+async def refresh_dashboard_snapshot(
+    request: DashboardRefreshRequest,
+    device_id: str = Query(default="default")
+):
+    """手动刷新当天仪表盘快照"""
+    if not request.brand or len(request.brand.strip()) < 2:
+        raise HTTPException(status_code=400, detail="品牌名称不能少于2个字符")
+    
+    industry = request.industry or get_brand_industry(request.brand.strip(), device_id)
+    snapshot = ensure_dashboard_snapshot(request.brand.strip(), industry, datetime.now().date())
+    return {
+        "success": True,
+        "message": "仪表盘数据已刷新",
+        "data": snapshot
+    }
 
 @app.get("/api/alerts")
 async def get_alerts(brand: str = Query(default=None), limit: int = Query(default=10)):
