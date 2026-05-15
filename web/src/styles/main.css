@@ -7,7 +7,7 @@
   --accent-light: #FF8A5F;
   --text-primary: #1A1A2E;
   --text-secondary: #4a5568;
-  --text-light: rgba(255, 255, 255, 0.9);
+  --text-light: #111827;
   --bg-white: #ffffff;
   --bg-light: #F8FAFC;
   --bg-dark: #1A1A2E;
@@ -175,7 +175,7 @@ body {
 }
 
 .page-subtitle {
-  color: rgba(255, 255, 255, 0.7);
+  color: #374151;
   font-size: 1rem;
 }
 

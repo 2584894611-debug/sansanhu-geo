@@ -49,7 +49,7 @@
     </div>
     
     <div class="features-section">
-      <h2 class="section-title">为什么选择好易易GEO</h2>
+      <h2 class="section-title">为什么选择三三狐GEO</h2>
       <div class="features-grid">
         <div class="feature-card">
           <span class="feature-icon">⚡</span>
@@ -182,10 +182,10 @@ function formatDate(dateStr) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
+  background: #F3F4F6;
   border-radius: var(--radius-md);
   padding: 3rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: #6B7280;
 }
 
 .placeholder-icon {
@@ -220,14 +220,14 @@ function formatDate(dateStr) {
   align-items: center;
   gap: 1rem;
   padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: #F3F4F6;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.2s;
 }
 
 .history-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #E5E7EB;
 }
 
 .history-brand {
@@ -241,7 +241,7 @@ function formatDate(dateStr) {
 }
 
 .history-date {
-  color: rgba(255, 255, 255, 0.5);
+  color: #6B7280;
   font-size: 0.875rem;
 }
 
@@ -256,7 +256,7 @@ function formatDate(dateStr) {
 }
 
 .feature-card {
-  background: rgba(255, 255, 255, 0.05);
+  background: #F3F4F6;
   border-radius: var(--radius-md);
   padding: 1.5rem;
   text-align: center;
@@ -265,7 +265,7 @@ function formatDate(dateStr) {
 
 .feature-card:hover {
   transform: translateY(-4px);
-  background: rgba(255, 255, 255, 0.1);
+  background: #E5E7EB;
 }
 
 .feature-icon {
@@ -282,7 +282,7 @@ function formatDate(dateStr) {
 
 .feature-card p {
   font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: #4B5563;
 }
 
 @media (max-width: 900px) {

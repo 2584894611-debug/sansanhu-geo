@@ -213,12 +213,12 @@
 
 .hero-subtitle {
   font-size: 1.25rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: #1F2937;
   margin-bottom: 1.5rem;
 }
 
 .hero-desc {
-  color: rgba(255, 255, 255, 0.7);
+  color: #374151;
   line-height: 1.8;
   max-width: 700px;
   margin: 0 auto 2rem;
@@ -250,7 +250,7 @@
 }
 
 .cta-secondary {
-  background: rgba(255, 255, 255, 0.1);
+  background: #E5E7EB;
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
@@ -275,7 +275,7 @@
 }
 
 .stat-card {
-  background: rgba(255, 255, 255, 0.05);
+  background: #F3F4F6;
   border: 1px solid rgba(212, 175, 55, 0.15);
   border-radius: 16px;
   padding: 1.5rem;
@@ -291,7 +291,7 @@
 
 .stat-label {
   font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: #374151;
 }
 
 .insight-box {
@@ -302,7 +302,7 @@
 }
 
 .insight-box p {
-  color: rgba(255, 255, 255, 0.9);
+  color: #111827;
   line-height: 1.8;
   margin-bottom: 0.75rem;
 }
@@ -318,7 +318,7 @@
 }
 
 .comparison-table {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid #E5E7EB;
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 1.5rem;
@@ -335,7 +335,7 @@
   font-weight: 600;
   color: #D4AF37;
   text-align: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #E5E7EB;
 }
 
 .geo-col {
@@ -344,21 +344,21 @@
 
 .col-label {
   padding: 1rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: #1F2937;
   font-weight: 500;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #F3F4F6;
 }
 
 .col-seo, .col-geo {
   padding: 1rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: #374151;
   text-align: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #F3F4F6;
 }
 
 .col-geo {
   background: rgba(212, 175, 55, 0.05);
-  color: rgba(255, 255, 255, 0.9);
+  color: #111827;
 }
 
 .conclusion {
@@ -374,7 +374,7 @@
 }
 
 .service-card {
-  background: rgba(255, 255, 255, 0.05);
+  background: #F3F4F6;
   border: 1px solid rgba(212, 175, 55, 0.15);
   border-radius: 16px;
   padding: 1.5rem;
@@ -393,14 +393,14 @@
 }
 
 .service-card p {
-  color: rgba(255, 255, 255, 0.7);
+  color: #374151;
   line-height: 1.6;
   margin-bottom: 1rem;
 }
 
 .service-list {
   list-style: none;
-  color: rgba(255, 255, 255, 0.6);
+  color: #4B5563;
   font-size: 0.875rem;
 }
 
@@ -415,7 +415,7 @@
 }
 
 .company-advantage {
-  background: rgba(255, 255, 255, 0.05);
+  background: #F3F4F6;
   border: 1px solid rgba(212, 175, 55, 0.15);
   border-radius: 16px;
   padding: 1.5rem;
@@ -435,7 +435,7 @@
 }
 
 .company-advantage p {
-  color: rgba(255, 255, 255, 0.7);
+  color: #374151;
   line-height: 1.6;
   font-size: 0.9rem;
 }
@@ -452,7 +452,7 @@
 }
 
 .faq-item {
-  background: rgba(255, 255, 255, 0.05);
+  background: #F3F4F6;
   border-radius: 12px;
   padding: 1.5rem;
   margin-bottom: 1rem;
@@ -485,7 +485,7 @@
 }
 
 .cta-section > p {
-  color: rgba(255, 255, 255, 0.7);
+  color: #374151;
   margin-bottom: 2rem;
 }
 
@@ -508,7 +508,7 @@
 
 .cta-phone {
   padding: 1rem 2rem;
-  background: rgba(255, 255, 255, 0.1);
+  background: #E5E7EB;
   color: #fff;
   border-radius: 12px;
   text-decoration: none;

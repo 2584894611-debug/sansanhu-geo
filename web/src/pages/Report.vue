@@ -322,7 +322,7 @@ function formatDate(dateStr) {
   align-items: flex-start;
   margin-bottom: 2rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #E5E7EB;
 }
 
 .brand-name {
@@ -345,7 +345,7 @@ function formatDate(dateStr) {
   flex-direction: column;
   align-items: flex-end;
   gap: 0.5rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: #4B5563;
   font-size: 0.875rem;
 }
 
@@ -479,7 +479,7 @@ function formatDate(dateStr) {
   gap: 1rem;
   margin-top: 2rem;
   padding-top: 2rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid #E5E7EB;
 }
 
 /* 行业对标样式 */
@@ -517,7 +517,7 @@ function formatDate(dateStr) {
   flex-wrap: wrap;
   gap: 1rem;
   padding: 1.25rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: #F3F4F6;
   border-radius: var(--radius);
 }
 
@@ -535,7 +535,7 @@ function formatDate(dateStr) {
 
 .compare-label {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: #6B7280;
   margin-bottom: 0.25rem;
 }
 
@@ -549,11 +549,11 @@ function formatDate(dateStr) {
 }
 
 .compare-value.benchmark {
-  color: rgba(255, 255, 255, 0.6);
+  color: #4B5563;
 }
 
 .compare-divider {
-  color: rgba(255, 255, 255, 0.3);
+  color: #9CA3AF;
   font-size: 0.875rem;
 }
 
@@ -593,15 +593,15 @@ function formatDate(dateStr) {
 
 .factors-label {
   font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: #4B5563;
 }
 
 .factor-tag {
   padding: 0.25rem 0.75rem;
-  background: rgba(255, 255, 255, 0.1);
+  background: #E5E7EB;
   border-radius: 15px;
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: #1F2937;
 }
 
 @media (max-width: 768px) {
