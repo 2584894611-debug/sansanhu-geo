@@ -104,7 +104,7 @@
       <div ref="platformSection" class="dashboard-card platform-card">
         <div class="section-header compact">
           <h2>各AI平台品牌提及率</h2>
-          <el-tag effect="plain">6个平台</el-tag>
+          <el-tag effect="plain">9个平台</el-tag>
         </div>
         <div ref="platformChartRef" class="platform-chart chart-surface"></div>
       </div>

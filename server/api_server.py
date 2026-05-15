@@ -478,7 +478,7 @@ def get_monitor_history(device_id: str, subscription_id: int, days: int = 30) ->
         return [dict(row) for row in c.fetchall()]
 
 # ==================== 监控仪表盘数据 ====================
-DASHBOARD_PLATFORMS = ["DeepSeek", "豆包", "文心一言", "Kimi", "ChatGPT", "通义千问"]
+DASHBOARD_PLATFORMS = ["DeepSeek", "豆包", "Kimi", "文心一言", "通义千问", "智谱清言", "天工AI", "Perplexity", "ChatGPT"]
 DASHBOARD_DEFAULT_BRANDS = [
     {"brand": "武汉万象城", "industry": "商场"},
     {"brand": "武汉K11", "industry": "商场"},

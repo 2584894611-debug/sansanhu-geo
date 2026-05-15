@@ -1,0 +1,355 @@
+<template>
+  <div class="analyze-form card">
+    <div class="form-group">
+      <label class="form-label">品牌名称</label>
+      <input 
+        v-model="form.brand" 
+        type="text" 
+        class="input"
+        placeholder="输入您要分析的品牌名称"
+        :disabled="loading"
+        @keyup.enter="handleAnalyze"
+      />
+    </div>
+    
+    <div class="form-group">
+      <label class="form-label">所属行业</label>
+      <select v-model="form.industry" class="select" :disabled="loading" @change="onIndustryChange">
+        <option value="">请选择行业</option>
+        <option v-for="ind in industries" :key="ind.id" :value="ind.id">
+          {{ ind.name }}
+        </option>
+      </select>
+      <select v-if="selectedIndustry && selectedIndustry.children && selectedIndustry.children.length > 0" 
+              v-model="form.subIndustry" 
+              class="select sub-select"
+              :disabled="loading">
+        <option value="">选择子行业（可选）</option>
+        <option v-for="sub in selectedIndustry.children" :key="sub.id" :value="sub.id">
+          {{ sub.name }}
+        </option>
+      </select>
+    </div>
+
+    <div class="contact-section">
+      <div class="contact-header">
+        <span class="contact-icon">📋</span>
+        <span class="contact-title">免费诊断需填写手机号</span>
+      </div>
+      <div class="form-group contact-group">
+        <input v-model="form.phone" type="tel" class="input"
+          placeholder="手机号（必填）" required pattern="1[3-9]d{9}" maxlength="11" :disabled="loading" />
+      </div>
+      <div class="form-group contact-group">
+        <input v-model="form.wechat" type="text" class="input" placeholder="微信号（选填）" :disabled="loading" />
+      </div>
+      <div class="form-group contact-group">
+        <input v-model="form.company" type="text" class="input" placeholder="公司名称（选填）" :disabled="loading" />
+      </div>
+    </div>
+    
+    <div class="form-actions">
+      <button 
+        class="btn btn-primary analyze-btn"
+        :disabled="!canSubmit || loading"
+        @click="handleAnalyze">
+        <span v-if="loading" class="loading-spinner small"></span>
+        <span v-else>🔍</span>
+        {{ loading ? '分析中...' : '免费诊断' }}
+      </button>
+      <div class="limit-hint">每个手机号可免费诊断1次</div>
+    </div>
+    
+    <!-- 工作流进度 -->
+    <div v-if="steps.length > 0" class="workflow-steps">
+      <div v-for="(step, i) in steps" :key="i" class="workflow-step" :class="{ 'step-done': step.done, 'step-active': step.active }">
+        <span class="step-icon">{{ step.done ? '✅' : (step.active ? '⏳' : '⬜') }}</span>
+        <span class="step-text">{{ step.message }}</span>
+      </div>
+    </div>
+    
+    <div v-if="error && !isFreeLimitError" class="error-message">{{ error }}</div>
+    
+    <div v-if="isFreeLimitError" class="free-limit-wall">
+      <div class="wall-icon">🎁</div>
+      <h4 class="wall-title">您已使用免费检测机会</h4>
+      <p class="wall-desc">付费后可享受更多权益</p>
+      <div class="wall-benefits">
+        <div class="benefit-item">✅ 无限次品牌检测</div>
+        <div class="benefit-item">✅ 完整内容播种方案</div>
+        <div class="benefit-item">✅ 持续效果监测追踪</div>
+        <div class="benefit-item">✅ 竞品对比分析</div>
+      </div>
+      <button class="btn btn-primary wall-btn" @click="openPaywall">💎 立即解锁全部功能</button>
+    </div>
+  </div>
+  
+  <PaywallModal v-if="showPaywall" @close="showPaywall = false" @activated="handleActivated" />
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useUserStore } from '../stores/user'
+import PaywallModal from './PaywallModal.vue'
+import api from '../api'
+
+const emit = defineEmits(['analyzed', 'error'])
+const userStore = useUserStore()
+
+const form = ref({
+  brand: '',
+  industry: '',
+  subIndustry: '',
+  phone: '',
+  wechat: '',
+  company: ''
+})
+
+const industries = ref([])
+const loading = ref(false)
+const error = ref('')
+const isFreeLimitError = ref(false)
+const showPaywall = ref(false)
+const steps = ref([])
+
+const canSubmit = computed(() => {
+  const hasBrand = form.value.brand.trim().length >= 2
+  const hasValidPhone = /^1[3-9]\d{9}$/.test(form.value.phone.trim())
+  return hasBrand && hasValidPhone
+})
+
+const selectedIndustry = computed(() => {
+  return industries.value.find(ind => ind.id === form.value.industry)
+})
+
+function onIndustryChange() {
+  form.value.subIndustry = ''
+}
+
+async function fetchIndustries() {
+  try {
+    const response = await api.getIndustries()
+    if (response.data.success) {
+      industries.value = response.data.data
+    }
+  } catch (e) {
+    console.error('获取行业列表失败:', e)
+  }
+}
+
+async function handleAnalyze() {
+  if (!canSubmit.value || loading.value) return
+  
+  loading.value = true
+  error.value = ''
+  steps.value = []
+  
+  try {
+    const industryValue = form.value.subIndustry || form.value.industry
+    const params = new URLSearchParams({
+      brand: form.value.brand.trim(),
+      industry: industryValue || '通用',
+      atype: 'brand_analysis',
+      device_id: userStore.deviceId || 'default',
+      phone: form.value.phone.trim(),
+      wechat: form.value.wechat.trim(),
+      company: form.value.company.trim()
+    })
+    
+    const response = await fetch(api.getBaseUrl() + '/analyze/stream?' + params, {
+      method: 'GET',
+      headers: { 'Accept': 'text/event-stream' }
+    })
+    
+    if (!response.ok) {
+      throw new Error('请求失败: ' + response.status)
+    }
+    
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const evt = JSON.parse(line.slice(6))
+            if (evt.type === 'progress') {
+              // 更新步骤列表
+              const existing = steps.value.findIndex(s => s.step === evt.step)
+              const stepData = { step: evt.step, message: evt.message, done: evt.message.startsWith('✅') || evt.message.startsWith('⚠️'), active: !evt.message.startsWith('✅') && !evt.message.startsWith('⚠️') }
+              if (existing >= 0) {
+                steps.value[existing] = stepData
+              } else {
+                steps.value.push(stepData)
+              }
+              // 标记之前的步骤为完成
+              steps.value.forEach((s, i) => {
+                if (i < steps.value.length - 1) s.done = true
+              })
+            } else if (evt.type === 'complete') {
+              userStore.decrementUsage()
+              steps.value.push({ step: 6, message: '🎉 分析完成！正在加载报告...', done: true, active: false })
+              emit('analyzed', evt.data)
+            } else if (evt.type === 'error') {
+              error.value = evt.message
+              if (evt.message.includes('已使用免费检测机会')) {
+                isFreeLimitError.value = true
+              }
+              emit('error', evt.message)
+            }
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err.message?.includes('429')) {
+      error.value = '该品牌本月免费诊断次数已用完'
+    } else {
+      error.value = '网络错误，请稍后重试'
+    }
+    emit('error', error.value)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchIndustries()
+})
+
+function openPaywall() {
+  showPaywall.value = true
+}
+
+function handleActivated() {
+  showPaywall.value = false
+  isFreeLimitError.value = false
+  error.value = ''
+}
+</script>
+
+<style scoped>
+.analyze-form {
+  padding: 2rem;
+}
+.form-group {
+  margin-bottom: 1.5rem;
+}
+.form-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+.contact-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.contact-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.contact-icon { font-size: 1.1rem; }
+.contact-title { font-weight: 600; font-size: 0.95rem; color: var(--text-primary); }
+.contact-group { margin-bottom: 0.75rem; }
+.contact-group:last-child { margin-bottom: 0; }
+.contact-group .input { padding: 0.65rem 1rem; font-size: 0.9rem; }
+.form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.analyze-btn {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.125rem;
+}
+.analyze-btn .loading-spinner.small {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+.limit-hint {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.8rem;
+}
+.workflow-steps {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.4);
+  transition: all 0.3s;
+}
+.workflow-step.step-done {
+  color: #48bb78;
+}
+.workflow-step.step-active {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+.step-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.error-message {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(229, 62, 62, 0.1);
+  border-radius: var(--radius-sm);
+  color: #e53e3e;
+  font-size: 0.875rem;
+  text-align: center;
+}
+.sub-select {
+  margin-top: 0.75rem;
+}
+
+.free-limit-wall {
+  margin-top: 1rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(26, 54, 93, 0.2), rgba(212, 175, 55, 0.1));
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.wall-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+.wall-title { font-size: 1.1rem; font-weight: 700; color: #fff; margin: 0 0 0.5rem 0; }
+.wall-desc { font-size: 0.9rem; color: rgba(255, 255, 255, 0.7); margin: 0 0 1rem 0; }
+
+.wall-benefits {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+.wall-benefits .benefit-item { padding: 0.4rem 0; font-size: 0.9rem; color: rgba(255, 255, 255, 0.9); }
+.wall-btn { width: 100%; padding: 0.85rem; font-size: 1rem; }
+</style>

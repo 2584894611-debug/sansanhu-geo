@@ -1,0 +1,2132 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+好易易GEO - AI搜索分析后端API服务 (扩展版)
+支持Freemium模式、数据库存储、用户管理和自动化采集
+"""
+
+import asyncio
+import os
+import json
+import re
+import sqlite3
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
+from functools import lru_cache
+from contextlib import contextmanager
+
+from fastapi import FastAPI, HTTPException, Header, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+import httpx
+
+# ==================== 配置 ====================
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-8914498a0fff48e793153ab852a38ae5")
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_MODEL = "deepseek-chat"
+
+# 千问API配置（双数据源）
+QWEN_API_KEY = os.getenv("QWEN_API_KEY", "sk-d0153f093a134ab19f198830cf36e664")
+QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+QWEN_MODEL = "qwen-plus"
+
+# 数据库配置 - 使用环境变量，支持Docker部署
+DATABASE_PATH = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "geo.db"))
+
+# 平台列表
+PLATFORMS = ["豆包", "元宝", "Kimi", "通义千问", "文心", "天工"]
+# 已接入真实数据源的平台
+REAL_DATA_PLATFORMS = ["通义千问"]  # 逐步扩展
+
+# Freemium配置
+FREE_DAILY_LIMIT = 1   # 免费用户每手机号1次（永久限制）
+
+# ==================== 数据库操作 ====================
+def get_db_connection():
+    """获取数据库连接"""
+    os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_database():
+    """初始化数据库"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        
+        # 用户表
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT UNIQUE NOT NULL,
+                token TEXT UNIQUE NOT NULL,
+                is_premium INTEGER DEFAULT 0,
+                premium_expires_at TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_login_at TEXT
+            )
+        ''')
+        
+        # 分析记录表
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS analysis_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                brand TEXT NOT NULL,
+                industry TEXT,
+                geo_score INTEGER,
+                visibility_score INTEGER,
+                recommendation_score INTEGER,
+                sentiment_score INTEGER,
+                diagnosis_data TEXT,
+                competitor_data TEXT,
+                recommendations TEXT,
+                is_full_report INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+        
+        # 历史评分表
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS score_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand TEXT NOT NULL,
+                industry TEXT,
+                geo_score INTEGER,
+                visibility_score INTEGER,
+                recommendation_score INTEGER,
+                sentiment_score INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 每日使用统计表
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS daily_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                usage_date TEXT NOT NULL,
+                usage_count INTEGER DEFAULT 0,
+                UNIQUE(user_id, usage_date),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
+        
+        # 预警记录表
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand TEXT NOT NULL,
+                alert_type TEXT NOT NULL,
+                message TEXT,
+                old_score INTEGER,
+                new_score INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 线索表（免费诊断留资）
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS leads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand TEXT NOT NULL,
+                industry TEXT,
+                phone TEXT,
+                wechat TEXT,
+                company TEXT,
+                device_id TEXT,
+                geo_score INTEGER,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # 品牌月度使用表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS brand_monthly_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand TEXT NOT NULL,
+                usage_month TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(brand, usage_month, device_id)
+            )
+        """)
+        # 迁移：给brand_monthly_usage加phone列
+        try:
+            c.execute("ALTER TABLE brand_monthly_usage ADD COLUMN phone TEXT DEFAULT ''")
+        except:
+            pass  # 列已存在
+        # 报告存储表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS saved_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone TEXT NOT NULL,
+                brand TEXT NOT NULL,
+                industry TEXT,
+                report_data TEXT NOT NULL,
+                is_free INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_saved_reports_phone ON saved_reports(phone)")
+
+        # 监测结果表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS monitor_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand TEXT NOT NULL,
+                industry TEXT DEFAULT '',
+                geo_score INTEGER DEFAULT 0,
+                platform_details TEXT DEFAULT '{}',
+                competitor_insight TEXT DEFAULT '',
+                ai_recommendation TEXT DEFAULT '',
+                query_questions TEXT DEFAULT '[]',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_monitor_results_brand ON monitor_results(brand)")
+
+        c.execute("CREATE INDEX IF NOT EXISTS idx_saved_reports_phone_brand ON saved_reports(phone, brand)")
+        # 付费手机号表
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS premium_phones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                note TEXT DEFAULT ''
+            )
+        """)
+        conn.commit()
+        print("✅ 数据库初始化完成")
+
+# ==================== 用户管理 ====================
+def get_or_create_user(device_id: str) -> Dict[str, Any]:
+    """获取或创建用户"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        
+        # 查找现有用户
+        c.execute("SELECT * FROM users WHERE device_id = ?", (device_id,))
+        user = c.fetchone()
+        
+        if not user:
+            # 创建新用户
+            token = secrets.token_urlsafe(32)
+            c.execute(
+                "INSERT INTO users (device_id, token) VALUES (?, ?)",
+                (device_id, token)
+            )
+            conn.commit()
+            c.execute("SELECT * FROM users WHERE device_id = ?", (device_id,))
+            user = c.fetchone()
+        
+        # 更新最后登录时间
+        c.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (datetime.now().isoformat(), user["id"])
+        )
+        conn.commit()
+        
+        return dict(user)
+
+def check_user_status(device_id: str) -> Dict[str, Any]:
+    """检查用户状态和剩余次数"""
+    user = get_or_create_user(device_id)
+    
+    today = datetime.now().date().isoformat()
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        
+        # 检查今日使用次数
+        c.execute(
+            "SELECT usage_count FROM daily_usage WHERE user_id = ? AND usage_date = ?",
+            (user["id"], today)
+        )
+        result = c.fetchone()
+        today_usage = result["usage_count"] if result else 0
+        
+        # 检查是否为付费用户
+        is_premium = user["is_premium"] == 1
+        if user["premium_expires_at"]:
+            expires_at = datetime.fromisoformat(user["premium_expires_at"])
+            if expires_at < datetime.now():
+                is_premium = False
+        
+        # 计算剩余次数
+        if is_premium:
+            remaining = -1  # 无限次
+        else:
+            remaining = max(0, FREE_DAILY_LIMIT - today_usage)
+        
+        return {
+            "is_premium": is_premium,
+            "today_usage": today_usage,
+            "remaining": remaining,
+            "token": user["token"]
+        }
+
+def increment_usage(device_id: str):
+    """增加使用次数"""
+    user = get_or_create_user(device_id)
+    today = datetime.now().date().isoformat()
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO daily_usage (user_id, usage_date, usage_count)
+            VALUES (?, ?, 1)
+            ON CONFLICT(user_id, usage_date)
+            DO UPDATE SET usage_count = usage_count + 1
+        ''', (user["id"], today))
+        conn.commit()
+
+def save_analysis_record(device_id: str, analysis_data: Dict[str, Any], is_full: bool = False):
+    """保存分析记录"""
+    user = get_or_create_user(device_id)
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO analysis_records 
+            (user_id, brand, industry, geo_score, visibility_score, recommendation_score, 
+             sentiment_score, diagnosis_data, competitor_data, recommendations, is_full_report)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            user["id"],
+            analysis_data.get("brand_name", ""),
+            analysis_data.get("industry", ""),
+            analysis_data.get("geo_score", 0),
+            analysis_data.get("visibility_score", 0),
+            analysis_data.get("recommendation_score", 0),
+            analysis_data.get("sentiment_score", 0),
+            json.dumps(analysis_data.get("diagnosis", []), ensure_ascii=False),
+            json.dumps(analysis_data.get("competitors", []), ensure_ascii=False),
+            json.dumps(analysis_data.get("recommendations", []), ensure_ascii=False),
+            1 if is_full else 0
+        ))
+        conn.commit()
+        return c.lastrowid
+
+def save_score_history(brand: str, industry: str, scores: Dict[str, int]):
+    """保存评分历史"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        
+        # 检查上次评分
+        c.execute(
+            "SELECT geo_score FROM score_history WHERE brand = ? ORDER BY created_at DESC LIMIT 1",
+            (brand,)
+        )
+        old_record = c.fetchone()
+        old_score = old_record["geo_score"] if old_record else None
+        
+        # 保存新评分
+        c.execute('''
+            INSERT INTO score_history (brand, industry, geo_score, visibility_score, 
+                                       recommendation_score, sentiment_score)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            brand, industry,
+            scores.get("geo_score", 0),
+            scores.get("visibility_score", 0),
+            scores.get("recommendation_score", 0),
+            scores.get("sentiment_score", 0)
+        ))
+        conn.commit()
+        
+        # 检查是否需要预警
+        if old_score is not None:
+            diff = scores.get("geo_score", 0) - old_score
+            if abs(diff) >= 5:  # 变化超过5分
+                alert_type = "rise" if diff > 0 else "drop"
+                c.execute('''
+                    INSERT INTO alerts (brand, alert_type, message, old_score, new_score)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    brand, alert_type,
+                    f"GEO评分{'上升' if diff > 0 else '下降'}了{abs(diff)}分",
+                    old_score, scores.get("geo_score", 0)
+                ))
+                conn.commit()
+        
+        return old_score
+
+def get_analysis_history(device_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """获取分析历史"""
+    user = get_or_create_user(device_id)
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT * FROM analysis_records 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT ?
+        ''', (user["id"], limit))
+        
+        return [dict(row) for row in c.fetchall()]
+
+def get_brand_score_trend(brand: str, days: int = 30) -> List[Dict[str, Any]]:
+    """获取品牌评分趋势"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT * FROM score_history 
+            WHERE brand = ? AND created_at >= datetime('now', '-' || ? || ' days')
+            ORDER BY created_at ASC
+        ''', (brand, days))
+        
+        return [dict(row) for row in c.fetchall()]
+
+def get_recent_alerts(brand: str = None, limit: int = 10) -> List[Dict[str, Any]]:
+    """获取最近预警"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if brand:
+            c.execute('''
+                SELECT * FROM alerts 
+                WHERE brand = ?
+                ORDER BY created_at DESC 
+                LIMIT ?
+            ''', (brand, limit))
+        else:
+            c.execute('''
+                SELECT * FROM alerts 
+                ORDER BY created_at DESC 
+                LIMIT ?
+            ''', (limit,))
+        
+        return [dict(row) for row in c.fetchall()]
+
+# ==================== FastAPI 应用 ====================
+app = FastAPI(
+    title="三三狐GEO API",
+    description="AI搜索优化分析后端服务 - Freemium版本",
+    version="2.0.0"
+)
+
+# CORS配置
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 启动时初始化数据库
+@app.on_event("startup")
+async def startup_event():
+    init_database()
+
+# ==================== 数据模型 ====================
+class AnalyzeRequest(BaseModel):
+    """分析请求模型"""
+    type: str = Field(..., description="分析类型: brand_analysis/competitor_analysis/content_strategy")
+    brand: str = Field(..., description="品牌/公司名称")
+    industry: str = Field(default="通用", description="行业类型")
+    device_id: str = Field(default="default", description="设备ID")
+    phone: str = Field(default="", description="联系电话")
+    wechat: str = Field(default="", description="微信号")
+    company: str = Field(default="", description="公司名称")
+
+class AnalyzeResponse(BaseModel):
+    """分析响应模型"""
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    ai_used: str = "DeepSeek"
+    platforms_analyzed: List[str] = PLATFORMS
+    error: Optional[str] = None
+    is_full_report: bool = False
+
+class UserStatusResponse(BaseModel):
+    """用户状态响应"""
+    is_premium: bool
+    today_usage: int
+    remaining: int
+    token: str
+
+# ==================== DeepSeek API 调用 ====================
+async def call_deepseek(prompt: str, system_prompt: Optional[str] = None) -> str:
+    """调用DeepSeek API生成内容"""
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 3000
+    }
+    
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(DEEPSEEK_API_URL, headers=headers, json=payload)
+        response.raise_for_status()
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+
+
+async def call_qwen(prompt: str, system_prompt: Optional[str] = None) -> str:
+    """调用千问API - 用于真实AI搜索查询（双数据源）"""
+    headers = {
+        "Authorization": f"Bearer {QWEN_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    
+    payload = {
+        "model": QWEN_MODEL,
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 2000
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(QWEN_API_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"千问API调用失败: {e}")
+        return ""
+
+
+async def query_ai_search_real(brand: str, industry: str) -> Dict[str, Any]:
+    """真实调用多个AI搜索引擎，获取品牌在AI回答中的实际表现"""
+    qwen_result = {"mentioned": False, "recommended": False, "sentiment": "unknown", "response_text": ""}
+    
+    # 构造用户会问的真实问题
+    search_prompts = [
+        f"推荐一下{industry}行业比较好的品牌",
+        f"{industry}行业哪些品牌值得选择？",
+    ]
+    
+    qwen_system = "你是一个AI助手，请根据你的知识真实回答用户的问题。不要编造，如果你知道就推荐，不知道就说不知道。"
+    
+    try:
+        # 用千问做真实AI搜索查询
+        responses = []
+        for prompt in search_prompts:
+            resp = await call_qwen(prompt, qwen_system)
+            if resp:
+                responses.append(resp)
+        
+        combined_text = " ".join(responses)
+        qwen_result["response_text"] = combined_text[:500]  # 保存摘要
+        
+        # 分析品牌是否被提及
+        brand_variants = [brand]
+        # 常见品牌名变体处理
+        if len(brand) > 2:
+            brand_variants.append(brand[:2])  # 简称
+        
+        for variant in brand_variants:
+            if variant in combined_text:
+                qwen_result["mentioned"] = True
+                break
+        
+        # 分析是否被推荐（正向语境）
+        recommend_keywords = ["推荐", "值得", "不错", "好", "知名", "领先", "优秀", "首选"]
+        if qwen_result["mentioned"]:
+            # 找品牌附近的上下文
+            for variant in brand_variants:
+                idx = combined_text.find(variant)
+                if idx >= 0:
+                    context = combined_text[max(0, idx-30):min(len(combined_text), idx+len(variant)+30)]
+                    for kw in recommend_keywords:
+                        if kw in context:
+                            qwen_result["recommended"] = True
+                            break
+                    # 简单情感判断
+                    neg_keywords = ["不推荐", "差", "问题", "投诉", "避雷"]
+                    for nk in neg_keywords:
+                        if nk in context:
+                            qwen_result["sentiment"] = "negative"
+                            break
+                    else:
+                        if qwen_result["recommended"]:
+                            qwen_result["sentiment"] = "positive"
+                        else:
+                            qwen_result["sentiment"] = "neutral"
+                    break
+        
+    except Exception as e:
+        print(f"千问真实查询失败: {e}")
+    
+    return {"qwen": qwen_result}
+
+
+# ==================== 监测功能：实时多平台AI搜索监测 ====================
+
+MONITOR_QUESTIONS = [
+    "请推荐{industry}领域的知名品牌，包括全国连锁和地方知名品牌",
+]
+BRAND_DIRECT_QUESTION = "{brand}怎么样？请介绍一下这个品牌"
+
+PLATFORM_QUERIES = {
+    "deepseek": {
+        "system": "你是一个知识丰富的AI助手，请根据你的知识库真实回答用户的问题。回答时请注意：1. 列举品牌时要尽量全面，包括全国性和地方性知名品牌 2. 如果是某个城市或地区的知名品牌，也要提及 3. 不要编造品牌，只推荐你确实知道的 4. 按知名度或推荐度排序",
+        "temperature": 0.3,
+        "max_tokens": 800,
+    },
+    "qwen": {
+        "system": "你是一个知识丰富的AI助手，请根据你的知识库真实回答用户的问题。回答时请注意：1. 列举品牌时要尽量全面，包括全国性和地方性知名品牌 2. 如果是某个城市或地区的知名品牌，也要提及 3. 不要编造品牌，只推荐你确实知道的 4. 按知名度或推荐度排序",
+        "temperature": 0.3,
+        "max_tokens": 800,
+    },
+}
+
+
+async def monitor_brand_on_platform(brand: str, industry: str, platform: str) -> dict:
+    """在单个AI平台上监测品牌可见度"""
+    config = PLATFORM_QUERIES.get(platform)
+    if not config:
+        return {"error": f"unknown platform: {platform}"}
+    
+    questions = []
+    # 品牌直查询放第一（最重要）
+    if brand:
+        questions.append(BRAND_DIRECT_QUESTION.format(brand=brand))
+    # 行业泛查
+    questions.extend([q.format(industry=industry) for q in MONITOR_QUESTIONS])
+    
+    # 同平台串行查询（避免API限流），单问题25秒超时
+    all_responses = []
+    for q in questions:
+        try:
+            if platform == "deepseek":
+                resp = await asyncio.wait_for(call_deepseek(q, config["system"]), timeout=25)
+            elif platform == "qwen":
+                resp = await asyncio.wait_for(call_qwen(q, config["system"]), timeout=25)
+            else:
+                continue
+            if resp:
+                all_responses.append({"question": q, "response": resp})
+        except asyncio.TimeoutError:
+            all_responses.append({"question": q, "error": "timeout"})
+        except Exception as e:
+            all_responses.append({"question": q, "error": str(e)})
+    
+    if not all_responses:
+        return {"platform": platform, "mentioned": False, "score": 0, "excerpts": [], "error": "no responses"}
+    
+    combined_text = " ".join(r.get("response", "") for r in all_responses if "response" in r)
+    
+    mentioned = brand in combined_text
+    # 品牌名去掉常见后缀做匹配（如武商梦时代->梦时代）
+    if not mentioned and len(brand) > 2:
+        # 提取品牌核心名：去掉前1-2字的地域/集团前缀
+        brand_cores = []
+        if len(brand) >= 4:
+            brand_cores.append(brand[2:])  # 去前2字
+        if len(brand) >= 3:
+            brand_cores.append(brand[1:])  # 去前1字
+        brand_cores.append(brand[-(len(brand)-1):] if len(brand) > 2 else brand)
+        for core in brand_cores:
+            if len(core) >= 2 and core in combined_text:
+                mentioned = True
+                break
+    
+    recommended = False
+    sentiment = "unknown"
+    excerpts = []
+    
+    if mentioned:
+        for variant in [brand, brand[:2], brand[-2:]] if len(brand) > 2 else [brand]:
+            start = 0
+            while True:
+                idx = combined_text.find(variant, start)
+                if idx < 0:
+                    break
+                context_start = max(0, idx - 50)
+                context_end = min(len(combined_text), idx + len(variant) + 80)
+                excerpt = combined_text[context_start:context_end].strip()
+                if excerpt and excerpt not in excerpts:
+                    excerpts.append(excerpt)
+                start = idx + len(variant)
+                if len(excerpts) >= 3:
+                    break
+        
+        recommend_words = ["推荐", "值得", "不错", "好", "知名", "领先", "优秀", "首选", "热门"]
+        neg_words = ["不推荐", "差", "问题", "投诉", "避雷", "坑"]
+        
+        for excerpt in excerpts:
+            has_pos = any(w in excerpt for w in recommend_words)
+            has_neg = any(w in excerpt for w in neg_words)
+            if has_pos and not has_neg:
+                recommended = True
+                sentiment = "positive"
+                break
+            elif has_neg:
+                sentiment = "negative"
+            elif sentiment == "unknown":
+                sentiment = "neutral"
+    
+    if not mentioned:
+        score = 0
+    elif recommended:
+        score = 90 + min(10, len(excerpts) * 3)
+    elif sentiment == "positive":
+        score = 70 + min(20, len(excerpts) * 5)
+    elif sentiment == "neutral":
+        score = 40 + min(30, len(excerpts) * 5)
+    else:
+        score = 20 + min(20, len(excerpts) * 5)
+    
+    return {
+        "platform": platform,
+        "mentioned": mentioned,
+        "recommended": recommended,
+        "sentiment": sentiment,
+        "score": score,
+        "excerpts": excerpts[:3],
+        "response_count": len([r for r in all_responses if "response" in r]),
+    }
+
+
+async def run_brand_monitor(brand: str, industry: str = "") -> dict:
+    """执行完整的品牌监测"""
+    import asyncio
+    
+    if not industry:
+        industry = "综合"
+    
+    platforms = list(PLATFORM_QUERIES.keys())
+    tasks = [monitor_brand_on_platform(brand, industry, p) for p in platforms]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    platform_details = {}
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            platform_details[platforms[i]] = {"error": str(result), "mentioned": False, "score": 0}
+        else:
+            platform_details[platforms[i]] = result
+    
+    scores = [r.get("score", 0) for r in platform_details.values() if not r.get("error")]
+    total_platforms = len(platforms)
+    mentioned_count = sum(1 for r in platform_details.values() if r.get("mentioned"))
+    recommended_count = sum(1 for r in platform_details.values() if r.get("recommended"))
+    
+    if scores:
+        geo_score = int(sum(scores) / total_platforms)
+    else:
+        geo_score = 0
+    
+    # 竞品洞察
+    competitor_insight = ""
+    try:
+        all_excerpts_text = ""
+        for r in platform_details.values():
+            excerpts = r.get("excerpts", [])
+            all_excerpts_text += " ".join(excerpts) + " "
+        
+        if all_excerpts_text:
+            comp_prompt = (
+                '以下是一些AI搜索关于' + industry + '品牌推荐的部分回答片段：\n'
+                + all_excerpts_text[:1000] + '\n\n'
+                + '请列出其中被推荐的品牌名称（除了' + brand + '），如果没有其他品牌被提及则说"未发现竞品推荐"。只列出品牌名，用逗号分隔。'
+            )
+            competitor_insight = await call_deepseek(comp_prompt, "你是一个简洁的分析助手，只输出品牌名称列表。")
+    except:
+        competitor_insight = "分析失败"
+    
+    # AI优化建议
+    ai_recommendation = ""
+    try:
+        rec_prompt = (
+            '品牌「' + brand + '」在' + industry + '行业的GEO可见度评分为'
+            + str(geo_score) + '分（满分100），在'
+            + str(mentioned_count) + '/' + str(total_platforms) + '个AI平台被提及，在'
+            + str(recommended_count) + '/' + str(total_platforms) + '个平台被推荐。请给出3条简洁的GEO优化建议，每条不超过30字。'
+        )
+        ai_recommendation = await call_deepseek(rec_prompt, "你是GEO优化专家，给出简洁可操作的建议。")
+    except:
+        ai_recommendation = "优化建议生成失败"
+    
+    # 存入数据库
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO monitor_results (brand, industry, geo_score, platform_details, competitor_insight, ai_recommendation, query_questions, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        """, (
+            brand, industry, geo_score,
+            json.dumps(platform_details, ensure_ascii=False),
+            competitor_insight,
+            ai_recommendation,
+            json.dumps([q.format(industry=industry) for q in MONITOR_QUESTIONS], ensure_ascii=False),
+        ))
+        monitor_id = c.lastrowid
+        
+        # 更新score_history用于趋势
+        c.execute("""
+            INSERT INTO score_history (brand, industry, geo_score, visibility_score, recommendation_score, sentiment_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        """, (
+            brand, industry, geo_score,
+            int(mentioned_count / total_platforms * 100) if total_platforms else 0,
+            int(recommended_count / total_platforms * 100) if total_platforms else 0,
+            int(geo_score * 0.8),
+        ))
+        
+        # 检查是否需要生成alert
+        c.execute("""
+            SELECT geo_score FROM score_history 
+            WHERE brand = ? ORDER BY created_at DESC LIMIT 2
+        """, (brand,))
+        rows = c.fetchall()
+        if len(rows) >= 2:
+            prev_score = rows[1][0]
+            diff = geo_score - prev_score
+            if abs(diff) >= 10:
+                alert_type = "rise" if diff > 0 else "fall"
+                c.execute("""
+                    INSERT INTO alerts (brand, alert_type, message, old_score, new_score, created_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                """, (brand, alert_type, f"GEO评分{'上升' if diff > 0 else '下降'}{abs(diff)}分", prev_score, geo_score))
+    
+    return {
+        "id": monitor_id,
+        "brand": brand,
+        "industry": industry,
+        "geo_score": geo_score,
+        "platform_details": platform_details,
+        "mentioned_count": mentioned_count,
+        "total_platforms": total_platforms,
+        "recommended_count": recommended_count,
+        "competitor_insight": competitor_insight,
+        "ai_recommendation": ai_recommendation,
+        "visibility_rate": f"{mentioned_count}/{total_platforms}",
+        "recommendation_rate": f"{recommended_count}/{total_platforms}",
+    }
+
+
+# ==================== 分析提示词模板 ====================
+SYSTEM_PROMPT = """你是一位专业的AI搜索优化分析师，擅长分析品牌在AI搜索引擎中的表现。
+请基于你的专业知识提供分析，不要编造具体数据，但可以基于合理推断给出专业建议。
+输出格式为清晰的JSON结构。"""
+
+@lru_cache(maxsize=128)
+def get_brand_analysis_prompt(brand: str, industry: str, is_full: bool = True) -> str:
+    """品牌分析提示词"""
+    diagnosis_limit = "全部" if is_full else "前3个"
+    return f"""请对品牌「{brand}」在{industry}行业进行AI搜索健康度分析。
+
+分析维度：
+1. 品牌在AI搜索引擎中的可见度 (0-100)
+2. 用户讨论情绪倾向（正面/中性/负面）(0-100)
+3. 品牌核心特征和用户认知
+4. 问题诊断（{diagnosis_limit}）
+5. GEO优化建议
+
+请以JSON格式返回分析结果，包含以下字段：
+- brand_name: 品牌名称
+- industry: 行业
+- ai_mentions: AI搜索提及量估算
+- sentiment: 用户情绪倾向
+- geo_score: GEO综合评分 (0-100)
+- visibility_score: 可见度评分 (0-100)
+- recommendation_score: 推荐度评分 (0-100)
+- sentiment_score: 情感倾向评分 (0-100)
+- key_features: 品牌核心特征列表（3-5个）
+- diagnosis: 问题诊断列表（每个包含type类型和description描述，type必须是中文，如：可见度不足、内容缺失、情感偏差、关键词薄弱等）
+- strengths: 品牌优势（数组，3-5条）
+- weaknesses: 待改进点（数组，3-5条）
+- recommendations: GEO优化建议（数组，5-8条，付费用户可获得全部）
+- competitors: 竞品列表（3-5个，每个包含name名称、score评分0-100、strengths优势数组、weaknesses劣势数组）
+
+只输出JSON，不要其他内容。"""
+
+@lru_cache(maxsize=128)
+def get_competitor_analysis_prompt(brand: str, industry: str) -> str:
+    """竞品分析提示词"""
+    return f"""请对「{brand}」在{industry}行业进行竞品对比分析。
+
+分析维度：
+1. 主要竞争对手识别（3-5个）
+2. 竞争优势和劣势对比
+3. 市场机会分析
+
+请以JSON格式返回分析结果，包含以下字段：
+- main_brand: 主分析品牌
+- industry: 行业
+- competitive_position: 竞争定位（描述）
+- competitors: 竞品列表，每个包含name名称、score评分(0-100)、strengths优势、weaknesses劣势
+- advantages: 相对于竞品的竞争优势（数组）
+- threats: 竞品威胁（数组）
+- opportunities: 市场机会（数组）
+- strategic_suggestions: 战略建议（数组，5-8条）
+
+只输出JSON，不要其他内容。"""
+
+@lru_cache(maxsize=128)
+def get_content_strategy_prompt(brand: str, industry: str) -> str:
+    """内容策略提示词"""
+    return f"""请为「{brand}」在{industry}行业制定AI搜索优化内容策略。
+
+策略维度：
+1. 目标关键词规划
+2. 内容类型建议
+3. 平台分发策略
+4. 爆款标题创作
+
+请以JSON格式返回策略，包含以下字段：
+- target_keywords: 目标关键词列表（5-8个）
+- content_types: 推荐内容类型（数组）
+- platforms: 重点平台及权重（数组，每个包含name平台名和weight权重0-1）
+- sample_titles: 爆款标题示例（5-8个）
+- content_calendar: 内容规划建议（按周/月的简单计划）
+- seo_tips: SEO优化技巧（数组）
+- trending_topics: 当前热点话题建议（数组）
+
+只输出JSON，不要其他内容。"""
+
+# ==================== 辅助函数 ====================
+def parse_json_response(text: str) -> Dict[str, Any]:
+    """解析API返回的JSON响应"""
+    json_match = re.search(r'\{[\s\S]*\}', text)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except json.JSONDecodeError:
+            pass
+    return {"raw_response": text, "note": "原始响应，无法解析为结构化JSON"}
+
+def safe_json_loads(text: str) -> Dict[str, Any]:
+    """安全地解析JSON"""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return parse_json_response(text)
+
+def generate_mock_analysis(brand: str, industry: str, is_full: bool = True) -> Dict[str, Any]:
+    """生成模拟分析数据（当API调用失败时使用）"""
+    import random
+    base_score = random.randint(55, 75)
+    
+    diagnosis = [
+        {"type": "可见度不足", "description": f"{brand}在AI搜索引擎中的品牌提及量较低"},
+        {"type": "内容缺失", "description": "缺少针对AI搜索优化的结构化内容"},
+        {"type": "情感偏差", "description": "用户讨论中存在一定的负面情绪需要关注"},
+        {"type": "关键词薄弱", "description": "核心关键词在AI搜索结果中排名靠后"},
+        {"type": "内容深度不足", "description": "品牌相关内容缺乏专业深度和权威性"}
+    ]
+    
+    recommendations = [
+        "增加品牌在权威媒体和行业网站的曝光",
+        "创建FAQ类型内容，覆盖用户常见问题",
+        "优化品牌故事的叙事结构，便于AI理解",
+        "建立内容更新机制，保持信息时效性",
+        "加强用户评价管理，提升正面口碑",
+        "布局长尾关键词，覆盖更多搜索场景",
+        "定期发布行业洞察内容，建立专业形象",
+        "优化官网内容结构，提升AI抓取效率"
+    ]
+    
+    competitors = [
+        {"name": f"{industry}领先品牌A", "score": random.randint(70, 85), 
+         "strengths": ["品牌认知度高", "内容矩阵完善"], "weaknesses": ["价格偏高"]},
+        {"name": f"{industry}领先品牌B", "score": random.randint(65, 80),
+         "strengths": ["技术创新领先"], "weaknesses": ["用户口碑一般"]},
+        {"name": f"{industry}新锐品牌C", "score": random.randint(50, 70),
+         "strengths": ["营销活跃"], "weaknesses": ["产品线单一"]}
+    ]
+    
+    result = {
+        "brand_name": brand,
+        "industry": industry,
+        "ai_mentions": "中等",
+        "sentiment": "正面偏中性",
+        "geo_score": base_score,
+        "visibility_score": random.randint(50, 70),
+        "recommendation_score": random.randint(55, 75),
+        "sentiment_score": random.randint(60, 80),
+        "key_features": ["品质可靠", "服务周到", "性价比高"],
+        "diagnosis": diagnosis if is_full else diagnosis[:3],
+        "strengths": ["品牌知名度较高", "产品质量稳定", "用户口碑良好"],
+        "weaknesses": ["AI搜索优化不足", "内容更新慢", "社交媒体曝光少"],
+        "recommendations": recommendations if is_full else recommendations[:3],
+        "competitors": competitors if is_full else []
+    }
+    
+    return result
+
+
+# ==================== 免费诊断辅助函数 ====================
+def save_lead(brand, industry, phone, wechat, company, device_id, geo_score=0):
+    """保存免费诊断线索"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO leads (brand, industry, phone, wechat, company, device_id, geo_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (brand, industry, phone, wechat, company, device_id, geo_score))
+        conn.commit()
+        return c.lastrowid
+
+
+# ==================== 报告存储 ====================
+FREE_REPORT_TTL_DAYS = 7
+PAID_REPORT_TTL_DAYS = 90
+
+def save_report(phone, brand, industry, report_data, is_free=True):
+    """保存报告到数据库"""
+    import json
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO saved_reports (phone, brand, industry, report_data, is_free) VALUES (?, ?, ?, ?, ?)",
+            (phone, brand, industry, json.dumps(report_data, ensure_ascii=False), 1 if is_free else 0)
+        )
+        conn.commit()
+        return cur.lastrowid
+
+def update_report_content_strategy(phone, brand, content_strategy_data):
+    """将内容播种方案写回已有的报告"""
+    import json
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        """Update all reports for this brand+phone to include content_strategy"""
+        cur.execute(
+            "SELECT id, report_data FROM saved_reports WHERE phone = ? AND brand = ?",
+            (phone, brand)
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return False
+        for row in rows:
+            report_data = json.loads(row["report_data"])
+            report_data["content_strategy"] = content_strategy_data
+            cur.execute(
+                "UPDATE saved_reports SET report_data = ? WHERE id = ?",
+                (json.dumps(report_data, ensure_ascii=False), row["id"])
+            )
+        conn.commit()
+        return True
+
+
+def get_cached_report(phone, brand):
+    """获取缓存的报告（7天内同品牌不重复分析）"""
+    import json
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, report_data, created_at, is_free FROM saved_reports WHERE phone = ? AND brand = ? ORDER BY created_at DESC LIMIT 1",
+            (phone, brand)
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        # Check TTL
+        created = datetime.fromisoformat(row["created_at"])
+        ttl_days = FREE_REPORT_TTL_DAYS if row["is_free"] else PAID_REPORT_TTL_DAYS
+        if (datetime.now() - created).days > ttl_days:
+            return None
+        return json.loads(row["report_data"])
+
+def get_report_history(phone, limit=20):
+    """获取手机号的报告历史"""
+    import json
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, brand, industry, created_at, is_free, report_data FROM saved_reports WHERE phone = ? ORDER BY created_at DESC LIMIT ?",
+            (phone, limit)
+        )
+        rows = cur.fetchall()
+        result = []
+        for r in rows:
+            item = {"id": r["id"], "brand": r["brand"], "industry": r["industry"], "created_at": r["created_at"], "is_free": r["is_free"]}
+            try:
+                rd = json.loads(r["report_data"]) if r["report_data"] else {}
+                item["score"] = rd.get("geo_score", 0)
+            except:
+                item["score"] = 0
+            result.append(item)
+        return result
+
+def get_report_by_id(report_id, phone):
+    """按ID获取报告（需验证手机号）"""
+    import json
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT report_data, brand, industry, created_at, is_free FROM saved_reports WHERE id = ? AND phone = ?",
+            (report_id, phone)
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        
+        report_data = json.loads(row["report_data"]) if row["report_data"] else {}
+        is_free_report = row["is_free"] == 1
+        
+        # 内容播种方案付费墙：免费用户看不到content_strategy
+        if is_free_report:
+            if "content_strategy" in report_data:
+                report_data["content_strategy"] = None
+            report_data["content_strategy_locked"] = True
+        else:
+            report_data["content_strategy_locked"] = False
+        
+        return {
+            "data": report_data,
+            "brand": row["brand"],
+            "industry": row["industry"],
+            "created_at": row["created_at"],
+            "is_free": row["is_free"]
+        }
+
+def generate_word_report(report_data, brand, industry, is_free=True):
+    """生成Word报告"""
+    from docx import Document
+    from docx.shared import Pt, Inches, Cm, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from io import BytesIO
+    
+    doc = Document()
+    
+    # 设置默认字体
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = '微软雅黑'
+    font.size = Pt(11)
+    
+    # 标题
+    title = doc.add_heading('', level=0)
+    run = title.add_run('三三狐GEO诊断报告')
+    run.font.size = Pt(24)
+    run.font.color.rgb = RGBColor(0x1A, 0x56, 0xDB)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # 基本信息
+    doc.add_paragraph('')
+    info = doc.add_paragraph()
+    info.add_run('品牌：').bold = True
+    info.add_run(brand)
+    info = doc.add_paragraph()
+    info.add_run('行业：').bold = True
+    info.add_run(industry or '-')
+    info = doc.add_paragraph()
+    info.add_run('分析时间：').bold = True
+    info.add_run(datetime.now().strftime('%Y-%m-%d %H:%M'))
+    
+    # 水印（免费用户）
+    if is_free:
+        doc.add_paragraph('')
+        wm = doc.add_paragraph()
+        wm.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = wm.add_run('—— 由三三狐GEO提供 ——')
+        run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+        run.font.size = Pt(9)
+    
+    doc.add_paragraph('')
+    
+    # 一、GEO评分
+    doc.add_heading('一、GEO评分', level=1)
+    scores = [
+        ('综合评分', report_data.get('geo_score')),
+        ('可见度', report_data.get('visibility_score')),
+        ('推荐度', report_data.get('recommendation_score')),
+        ('情感倾向', report_data.get('sentiment_score')),
+    ]
+    table = doc.add_table(rows=len(scores)+1, cols=2)
+    table.style = 'Light Shading Accent 1'
+    table.rows[0].cells[0].text = '指标'
+    table.rows[0].cells[1].text = '评分'
+    for i, (name, val) in enumerate(scores):
+        table.rows[i+1].cells[0].text = name
+        table.rows[i+1].cells[1].text = str(val or '-')
+    
+    doc.add_paragraph('')
+    
+    # 二、诊断分析
+    diagnosis = report_data.get('diagnosis', [])
+    if diagnosis:
+        doc.add_heading('二、诊断分析', level=1)
+        for i, d in enumerate(diagnosis):
+            dtype = d.get('type', '诊断') if isinstance(d, dict) else '诊断'
+            desc = d.get('description', str(d)) if isinstance(d, dict) else str(d)
+            p = doc.add_paragraph()
+            p.add_run(f'{i+1}. [{dtype}] ').bold = True
+            p.add_run(desc)
+    
+    # 三、优化建议
+    recs = report_data.get('recommendations', [])
+    if is_free and recs:
+        recs = recs[:1]
+    if recs:
+        doc.add_heading('三、优化建议', level=1)
+        for i, r in enumerate(recs):
+            if isinstance(r, dict):
+                title_text = r.get('title', '')
+                desc_text = r.get('description', '')
+                action_text = r.get('action', '')
+                p = doc.add_paragraph()
+                p.add_run(f'{i+1}. {title_text}').bold = True
+                if desc_text:
+                    doc.add_paragraph(f'   {desc_text}')
+                if action_text:
+                    doc.add_paragraph(f'   行动建议：{action_text}')
+            else:
+                doc.add_paragraph(f'{i+1}. {r}')
+    
+    # 四、竞品对比（付费）
+    competitors = report_data.get('competitors', [])
+    if competitors and not is_free:
+        doc.add_heading('四、竞品对比', level=1)
+        for i, comp in enumerate(competitors):
+            if isinstance(comp, dict):
+                name = comp.get('name', '')
+                score = comp.get('geo_score', '-')
+                p = doc.add_paragraph()
+                p.add_run(f'{i+1}. {name}').bold = True
+                p.add_run(f'（评分：{score}）')
+            else:
+                doc.add_paragraph(f'{i+1}. {comp}')
+    elif is_free:
+        doc.add_heading('四、竞品对比', level=1)
+        p = doc.add_paragraph()
+        run = p.add_run('💡 升级付费版查看完整竞品对比分析')
+        run.font.color.rgb = RGBColor(0x1A, 0x56, 0xDB)
+    
+    # 五、内容播种方案（付费）
+    cs = report_data.get('content_strategy')
+    if cs and not is_free:
+        doc.add_heading('五、内容播种方案', level=1)
+        if cs.get('keywords'):
+            p = doc.add_paragraph()
+            p.add_run('关键词：').bold = True
+            p.add_run('、'.join(cs['keywords']))
+        if cs.get('content_types'):
+            p = doc.add_paragraph()
+            p.add_run('内容类型：').bold = True
+            p.add_run('、'.join(cs['content_types']))
+        if cs.get('viral_titles'):
+            p = doc.add_paragraph()
+            p.add_run('爆款标题：').bold = True
+            for i, t in enumerate(cs['viral_titles']):
+                doc.add_paragraph(f'  {i+1}. {t}')
+    elif is_free:
+        doc.add_heading('五、内容播种方案', level=1)
+        p = doc.add_paragraph()
+        run = p.add_run('💡 升级付费版查看完整内容播种方案')
+        run.font.color.rgb = RGBColor(0x1A, 0x56, 0xDB)
+    
+    # 页脚
+    doc.add_paragraph('')
+    doc.add_paragraph('')
+    footer = doc.add_paragraph()
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = footer.add_run('报告由三三狐GEO生成 | https://xhpj.cloud')
+    run.font.size = Pt(9)
+    run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+    
+    # 保存到BytesIO
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+ADMIN_SECRET = "ssfox-admin-2026"
+
+def check_phone_premium(phone: str) -> bool:
+    """检查手机号是否为付费用户"""
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT expires_at FROM premium_phones WHERE phone = ?",
+            (phone,)
+        )
+        result = cur.fetchone()
+        if result and result["expires_at"]:
+            expires = datetime.fromisoformat(result["expires_at"])
+            if expires > datetime.now():
+                return True
+    return False
+
+def upgrade_phone(phone: str, days: int = 365, note: str = ""):
+    """开通手机号付费权限"""
+    expires_at = datetime.now().replace(year=datetime.now().year + (days // 365)).isoformat() if days >= 365 else (datetime.now().replace(day=1)).isoformat()
+    # More precise: add days
+    from datetime import timedelta
+    expires_at = (datetime.now() + timedelta(days=days)).isoformat()
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR REPLACE INTO premium_phones (phone, expires_at, note) VALUES (?, ?, ?)",
+            (phone, expires_at, note)
+        )
+        conn.commit()
+
+def is_valid_phone(phone: str) -> bool:
+    """校验手机号格式（11位，合法号段）"""
+    if not phone or len(phone) != 11 or not phone.isdigit():
+        return False
+    valid_prefixes = ('13', '14', '15', '16', '17', '18', '19')
+    return phone.startswith(valid_prefixes)
+
+def check_phone_daily_limit(phone: str) -> bool:
+    """检查手机号每日使用限制（3次/天）"""
+    today = datetime.now().date().isoformat()
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) as cnt FROM leads WHERE phone = ? AND date(created_at) = ?",
+            (phone, today)
+        )
+        result = cur.fetchone()
+        return result["cnt"] < FREE_DAILY_LIMIT
+
+def check_brand_monthly_limit(brand, phone):
+    """检查品牌月度使用限制（免费用户每月每品牌1次，按手机号）"""
+    month = datetime.now().strftime("%Y-%m")
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT COUNT(*) as cnt FROM brand_monthly_usage WHERE brand = ? AND usage_month = ? AND phone = ?",
+            (brand, month, phone)
+        )
+        result = c.fetchone()
+        return result["cnt"] == 0
+
+def record_brand_monthly_usage(brand, phone):
+    """记录品牌月度使用"""
+    month = datetime.now().strftime("%Y-%m")
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        try:
+            c.execute(
+                "INSERT INTO brand_monthly_usage (brand, usage_month, phone) VALUES (?, ?, ?)",
+                (brand, month, phone)
+            )
+            conn.commit()
+        except:
+            pass
+
+# ==================== API 路由 ====================
+@app.get("/")
+async def root():
+    """API根路径"""
+    return {
+        "name": "三三狐GEO API",
+        "version": "2.0.0",
+        "status": "running",
+        "freemium": True,
+        "endpoints": {
+            "GET /health": "健康检查(简化)",
+            "GET /api/health": "健康检查",
+            "POST /api/analyze": "品牌分析",
+            "GET /api/user/status": "用户状态",
+            "GET /api/analysis/history": "分析历史",
+            "GET /api/brand/trend": "评分趋势",
+            "POST /api/premium/activate": "激活付费"
+        }
+    }
+
+@app.get("/health")
+async def health_simple():
+    """简化健康检查接口 - 用于Docker healthcheck"""
+    return {"status": "ok"}
+
+@app.get("/api/health")
+async def health_check():
+    """健康检查接口"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "ai_service": "DeepSeek",
+        "platforms": PLATFORMS
+    }
+
+@app.get("/api/user/status")
+async def get_user_status(device_id: str = Query(default="default")):
+    """获取用户状态"""
+    status = check_user_status(device_id)
+    return UserStatusResponse(**status)
+
+@app.post("/api/premium/activate")
+async def activate_premium(device_id: str, token: str = Query(...)):
+    """激活付费功能（模拟）"""
+    # 简单的token验证
+    if len(token) < 10:
+        raise HTTPException(status_code=400, detail="无效的激活码")
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            "UPDATE users SET is_premium = 1, premium_expires_at = ? WHERE device_id = ?",
+            (datetime.now().replace(year=2030).isoformat(), device_id)
+        )
+        conn.commit()
+    
+    return {"success": True, "message": "付费功能已激活"}
+
+@app.get("/api/analysis/history")
+async def get_history(device_id: str = Query(default="default"), limit: int = Query(default=20)):
+    """获取分析历史"""
+    history = get_analysis_history(device_id, limit)
+    return {"success": True, "data": history}
+
+@app.get("/api/brand/trend")
+async def get_trend(brand: str = Query(...), days: int = Query(default=30)):
+    """获取品牌评分趋势"""
+    trend = get_brand_score_trend(brand, days)
+    return {"success": True, "brand": brand, "data": trend}
+
+@app.get("/api/alerts")
+async def get_alerts(brand: str = Query(default=None), limit: int = Query(default=10)):
+    """获取预警信息"""
+    alerts = get_recent_alerts(brand, limit)
+    return {"success": True, "data": alerts}
+
+
+@app.get("/api/industries")
+async def get_industries():
+    """获取行业分类列表"""
+    industries_data = [
+        {"id": "catering", "name": "餐饮美食", "children": [
+            {"id": "catering_chinese", "name": "中餐"},
+            {"id": "catering_hotpot", "name": "火锅"},
+            {"id": "catering_bbq", "name": "烧烤"},
+            {"id": "catering_drink", "name": "茶饮咖啡"},
+            {"id": "catering_bakery", "name": "烘焙甜品"},
+            {"id": "catering_fastfood", "name": "快餐简餐"}
+        ]},
+        {"id": "realestate", "name": "房产家居", "children": [
+            {"id": "realestate_developer", "name": "房产开发"},
+            {"id": "realestate_decor", "name": "装修装饰"},
+            {"id": "realestate_furniture", "name": "家具建材"},
+            {"id": "realestate_agency", "name": "中介服务"}
+        ]},
+        {"id": "commerce", "name": "商业综合体", "children": [
+            {"id": "commerce_mall", "name": "购物中心"},
+            {"id": "commerce_plaza", "name": "商业广场"},
+            {"id": "commerce_outlet", "name": "奥特莱斯"}
+        ]},
+        {"id": "auto", "name": "汽车交通", "children": [
+            {"id": "auto_new", "name": "新能源汽车"},
+            {"id": "auto_dealer", "name": "汽车经销商"},
+            {"id": "auto_service", "name": "汽车后市场"},
+            {"id": "auto_rental", "name": "汽车租赁"}
+        ]},
+        {"id": "tourism", "name": "文旅景区", "children": [
+            {"id": "tourism_scenic", "name": "景区景点"},
+            {"id": "tourism_hotel", "name": "酒店民宿"},
+            {"id": "tourism_travel", "name": "旅行社"},
+            {"id": "tourism_culture", "name": "文化创意"}
+        ]},
+        {"id": "education", "name": "教育培训", "children": [
+            {"id": "education_k12", "name": "K12教育"},
+            {"id": "education_vocational", "name": "职业培训"},
+            {"id": "education_online", "name": "在线教育"},
+            {"id": "education_study", "name": "留学咨询"}
+        ]},
+        {"id": "medical", "name": "医疗健康", "children": [
+            {"id": "medical_hospital", "name": "医院诊所"},
+            {"id": "medical_dental", "name": "口腔齿科"},
+            {"id": "medical_beauty", "name": "医美整形"},
+            {"id": "medical_pharmacy", "name": "医药零售"}
+        ]},
+        {"id": "finance", "name": "金融理财", "children": [
+            {"id": "finance_bank", "name": "银行保险"},
+            {"id": "finance_securities", "name": "证券基金"},
+            {"id": "finance_loan", "name": "贷款服务"},
+            {"id": "finance_fintech", "name": "金融科技"}
+        ]},
+        {"id": "retail", "name": "零售消费", "children": [
+            {"id": "retail_supermarket", "name": "商超便利"},
+            {"id": "retail_clothing", "name": "服装鞋帽"},
+            {"id": "retail_cosmetics", "name": "美妆个护"},
+            {"id": "retail_digital", "name": "数码3C"}
+        ]},
+        {"id": "internet", "name": "互联网科技", "children": [
+            {"id": "internet_saas", "name": "SaaS软件"},
+            {"id": "internet_ecommerce", "name": "电商平台"},
+            {"id": "internet_ai", "name": "人工智能"},
+            {"id": "internet_game", "name": "游戏娱乐"}
+        ]},
+        {"id": "manufacturing", "name": "制造工业", "children": [
+            {"id": "manufacturing_equipment", "name": "装备制造"},
+            {"id": "manufacturing_electronics", "name": "电子制造"},
+            {"id": "manufacturing_newenergy", "name": "新能源"},
+            {"id": "manufacturing_material", "name": "新材料"}
+        ]},
+        {"id": "realestate_service", "name": "生活服务", "children": [
+            {"id": "service_wedding", "name": "婚庆摄影"},
+            {"id": "service_fitness", "name": "健身运动"},
+            {"id": "service_pet", "name": "宠物服务"},
+            {"id": "service_housekeeping", "name": "家政保洁"},
+            {"id": "service_beauty", "name": "美容护肤"}
+        ]},
+        {"id": "media", "name": "传媒营销", "children": [
+            {"id": "media_ad", "name": "广告营销"},
+            {"id": "media_pr", "name": "公关传播"},
+            {"id": "media_content", "name": "内容创作"},
+            {"id": "media_mc", "name": "MCN机构"}
+        ]},
+        {"id": "food", "name": "食品饮料", "children": [
+            {"id": "food_snack", "name": "休闲零食"},
+            {"id": "food_drink", "name": "饮料饮品"},
+            {"id": "food_health", "name": "保健食品"},
+            {"id": "food_fresh", "name": "生鲜电商"}
+        ]},
+        {"id": "logistics", "name": "物流仓储", "children": [
+            {"id": "logistics_express", "name": "快递配送"},
+            {"id": "logistics_warehouse", "name": "仓储服务"},
+            {"id": "logistics_coldchain", "name": "冷链物流"}
+        ]},
+        {"id": "other", "name": "其他行业", "children": []}
+    ]
+    # 存为全局变量供其他函数使用
+    global industries_data_global
+    industries_data_global = industries_data
+    return {"success": True, "data": industries_data}
+
+@app.post("/api/analyze", response_model=AnalyzeResponse)
+async def analyze(request: AnalyzeRequest):
+    """核心分析接口"""
+    valid_types = ["brand_analysis", "competitor_analysis", "content_strategy"]
+    if request.type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的分析类型。可选值: {valid_types}"
+        )
+    
+    if not request.brand or len(request.brand.strip()) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="品牌名称不能少于2个字符"
+        )
+    
+    # 检查用户状态
+    status = check_user_status(request.device_id)
+    phone_is_premium = check_phone_premium(request.phone.strip()) if request.phone.strip() else False
+    is_free = not status["is_premium"] and not phone_is_premium
+    
+    # 免费用户必须留手机号
+    if is_free and not request.phone.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="免费诊断需提供手机号，付费后可无限次检测"
+        )
+    
+    # 校验手机号格式
+    if is_free and not is_valid_phone(request.phone.strip()):
+        raise HTTPException(
+            status_code=400,
+            detail="请输入有效的手机号码（11位）"
+        )
+    
+    # 免费用户每天3次（按手机号）
+    if is_free and not check_phone_daily_limit(request.phone.strip()):
+        raise HTTPException(
+            status_code=429,
+            detail="今日免费诊断次数已用完（每天3次），请明天再来"
+        )
+    
+    # 免费用户每月每品牌限1次（按手机号）
+    if is_free and not check_brand_monthly_limit(request.brand.strip(), request.phone.strip()):
+        raise HTTPException(
+            status_code=429,
+            detail="该品牌本月免费诊断次数已用完，每月每品牌限1次"
+        )
+    
+    # 检查7天内是否有缓存报告（仅品牌分析走缓存，其他类型实时生成）
+    cached = None
+    if request.type == "brand_analysis":
+        cached = get_cached_report(request.phone.strip(), request.brand.strip())
+    if request.type == "brand_analysis":
+        cached = get_cached_report(request.phone.strip(), request.brand.strip())
+    if cached:
+        cached.setdefault("_meta", {})["from_cache"] = True
+        return {"success": True, "data": cached}
+    
+    try:
+        # 根据分析类型选择提示词
+        is_full = status["is_premium"] or phone_is_premium
+        
+        if request.type == "brand_analysis":
+            prompt = get_brand_analysis_prompt(request.brand, request.industry, is_full)
+        elif request.type == "competitor_analysis":
+            prompt = get_competitor_analysis_prompt(request.brand, request.industry)
+        else:
+            prompt = get_content_strategy_prompt(request.brand, request.industry)
+        
+        # 双数据源并发调用：DeepSeek评分 + 千问真实搜索
+        industry_name_map = {
+            "catering": "餐饮美食", "realestate": "房产家居", "commerce": "商业综合体",
+            "auto": "汽车交通", "tourism": "文旅景区", "education": "教育培训",
+            "medical": "医疗健康", "finance": "金融理财", "retail": "零售消费",
+            "internet": "互联网科技", "manufacturing": "制造工业",
+            "realestate_service": "生活服务", "media": "传媒营销",
+            "food": "食品饮料", "logistics": "物流仓储", "other": "其他行业"
+        }
+        industry_name = industry_name_map.get(request.industry, request.industry)
+        
+        import asyncio
+        # 并发调用两个数据源
+        ds_task = asyncio.create_task(call_deepseek(prompt, SYSTEM_PROMPT))
+        qwen_task = asyncio.create_task(query_ai_search_real(request.brand.strip(), industry_name))
+        
+        # DeepSeek评分
+        try:
+            response_text = await ds_task
+            analysis_data = safe_json_loads(response_text)
+        except Exception as e:
+            print(f"DeepSeek调用失败: {e}，使用模拟数据")
+            analysis_data = generate_mock_analysis(request.brand, request.industry, is_full)
+        
+        # 千问真实搜索（并发执行，不阻塞DeepSeek）
+        try:
+            real_search_data = await qwen_task
+            analysis_data["ai_search_real"] = real_search_data
+            analysis_data["data_sources"] = ["DeepSeek(评分分析)", "千问(真实搜索)"]
+        except Exception as e:
+            print(f"千问双数据源查询失败: {e}")
+            analysis_data["data_sources"] = ["DeepSeek(评分分析)"]
+        
+        # 保存报告到数据库（content_strategy类型更新旧报告，不新建）
+        if request.type == "content_strategy":
+            cs_data = {
+                "target_keywords": analysis_data.get("target_keywords", []),
+                "content_types": analysis_data.get("content_types", []),
+                "platforms": analysis_data.get("platforms", []),
+                "sample_titles": analysis_data.get("sample_titles", []),
+                "content_calendar": analysis_data.get("content_calendar", ""),
+                "seo_tips": analysis_data.get("seo_tips", []),
+                "trending_topics": analysis_data.get("trending_topics", [])
+            }
+            update_report_content_strategy(request.phone.strip(), request.brand.strip(), cs_data)
+            report_id = None
+        else:
+            report_id = save_report(request.phone.strip(), request.brand.strip(), request.industry, analysis_data, is_free)
+        
+        if is_free:
+            save_lead(
+                request.brand.strip(), request.industry,
+                request.phone.strip(), request.wechat.strip(),
+                request.company.strip(), request.device_id,
+                analysis_data.get("geo_score", 0)
+            )
+            record_brand_monthly_usage(request.brand.strip(), request.phone.strip())
+        
+        # 付费用户：生成内容播种方案
+        if not is_free and request.type == "brand_analysis":
+            try:
+                cs_prompt = get_content_strategy_prompt(request.brand, request.industry)
+                cs_text = await call_deepseek(cs_prompt, SYSTEM_PROMPT)
+                cs_data = safe_json_loads(cs_text)
+                analysis_data["content_strategy"] = {
+                    "target_keywords": cs_data.get("target_keywords", []),
+                    "content_types": cs_data.get("content_types", []),
+                    "platforms": cs_data.get("platforms", []),
+                    "sample_titles": cs_data.get("sample_titles", []),
+                    "content_calendar": cs_data.get("content_calendar", ""),
+                    "seo_tips": cs_data.get("seo_tips", []),
+                    "trending_topics": cs_data.get("trending_topics", [])
+                }
+            except Exception as e:
+                print(f"内容播种方案生成失败: {e}")
+                analysis_data["content_strategy"] = None
+        
+        # 免费用户：只显示1条优化建议，不显示竞品对比和内容播种方案
+        if is_free:
+            if "recommendations" in analysis_data and isinstance(analysis_data["recommendations"], list):
+                analysis_data["recommendations"] = analysis_data["recommendations"][:1]
+            if "competitors" in analysis_data:
+                analysis_data["competitors"] = []
+            if "diagnosis" in analysis_data and isinstance(analysis_data["diagnosis"], list):
+                analysis_data["diagnosis"] = analysis_data["diagnosis"][:1]
+            if "content_strategy" in analysis_data:
+                del analysis_data["content_strategy"]
+        
+        # 保存评分历史
+        if request.type == "brand_analysis":
+            save_score_history(request.brand, request.industry, {
+                "geo_score": analysis_data.get("geo_score", 0),
+                "visibility_score": analysis_data.get("visibility_score", 0),
+                "recommendation_score": analysis_data.get("recommendation_score", 0),
+                "sentiment_score": analysis_data.get("sentiment_score", 0)
+            })
+        
+        # 保存分析记录
+        save_analysis_record(request.device_id, analysis_data, is_full)
+        
+        # 增加使用次数（免费用户）
+        if not status["is_premium"]:
+            increment_usage(request.device_id)
+        
+        # content_strategy类型：将播种方案写回已有报告
+        if request.type == "content_strategy" and request.phone.strip():
+            cs_data = {
+                "target_keywords": analysis_data.get("target_keywords", []),
+                "content_types": analysis_data.get("content_types", []),
+                "platforms": analysis_data.get("platforms", []),
+                "sample_titles": analysis_data.get("sample_titles", []),
+                "content_calendar": analysis_data.get("content_calendar", ""),
+                "seo_tips": analysis_data.get("seo_tips", []),
+                "trending_topics": analysis_data.get("trending_topics", [])
+            }
+            update_report_content_strategy(request.phone.strip(), request.brand.strip(), cs_data)
+        
+        # 添加元数据
+        analysis_data["_meta"] = {
+            "brand": request.brand,
+            "industry": request.industry,
+            "analysis_type": request.type,
+            "analyzed_at": datetime.now().isoformat(),
+            "ai_model": DEEPSEEK_MODEL,
+            "is_full_report": is_full,
+            "is_free": is_free,
+            "watermark": "由三三狐GEO提供" if is_free else None,
+            "_report_id": report_id if "report_id" in dir() else None,
+            "_query_phone": request.phone.strip()
+        }
+        
+        return AnalyzeResponse(
+            success=True,
+            data=analysis_data,
+            ai_used="DeepSeek",
+            platforms_analyzed=PLATFORMS,
+            is_full_report=is_full
+        )
+        
+    except Exception as e:
+        return AnalyzeResponse(
+            success=False,
+            error=f"分析失败: {str(e)}",
+            platforms_analyzed=PLATFORMS
+        )
+
+
+
+
+
+
+# ==================== 报告历史与下载 ====================
+
+@app.get("/api/reports/history")
+async def report_history(phone: str = Query(..., description="手机号")):
+    """获取手机号的报告历史列表"""
+    if not is_valid_phone(phone):
+        raise HTTPException(status_code=400, detail="手机号格式无效")
+    reports = get_report_history(phone)
+    return {"success": True, "data": reports}
+
+@app.get("/api/reports/{report_id}")
+async def get_report(report_id: int, phone: str = Query(..., description="手机号")):
+    """获取指定报告详情"""
+    if not is_valid_phone(phone):
+        raise HTTPException(status_code=400, detail="手机号格式无效")
+    report = get_report_by_id(report_id, phone)
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    rd = report["data"]
+    rd.setdefault("_meta", {})
+    rd["_meta"]["analyzed_at"] = report["created_at"]
+    rd["_meta"]["is_full_report"] = report["is_free"] == 0
+    rd["_report_id"] = report_id
+    rd["_query_phone"] = phone
+    return {"success": True, "data": rd}
+
+@app.get("/api/reports/{report_id}/download")
+async def download_report(report_id: int, phone: str = Query(..., description="手机号")):
+    """下载Word格式报告"""
+    from fastapi.responses import StreamingResponse
+    
+    if not is_valid_phone(phone):
+        raise HTTPException(status_code=400, detail="手机号格式无效")
+    report = get_report_by_id(report_id, phone)
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    
+    is_free = report["is_free"] == 1
+    buffer = generate_word_report(report["data"], report["brand"], report["industry"], is_free)
+    
+    filename = f"三三狐GEO_{report['brand']}_报告.docx"
+    from urllib.parse import quote
+    encoded_filename = quote(filename)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+    )
+
+
+# ==================== 后台管理接口 ====================
+
+@app.post("/api/admin/upgrade")
+async def admin_upgrade_phone(
+    phone: str = Query(..., description="手机号"),
+    days: int = Query(default=365, description="有效天数"),
+    note: str = Query(default="", description="备注"),
+    secret: str = Query(..., description="管理密钥")
+):
+    """后台开通付费用户（按手机号）"""
+    if secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="无权限")
+    if not is_valid_phone(phone):
+        raise HTTPException(status_code=400, detail="手机号格式无效")
+    
+    upgrade_phone(phone, days, note)
+    
+    return {
+        "success": True,
+        "message": f"已为 {phone} 开通付费权限（{days}天）",
+        "phone": phone,
+        "days": days
+    }
+
+@app.post("/api/admin/downgrade")
+async def admin_downgrade_phone(
+    phone: str = Query(..., description="手机号"),
+    secret: str = Query(..., description="管理密钥")
+):
+    """后台取消付费用户"""
+    if secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="无权限")
+    
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM premium_phones WHERE phone = ?", (phone,))
+        conn.commit()
+    
+    return {"success": True, "message": f"已取消 {phone} 的付费权限"}
+
+@app.get("/api/admin/premium-list")
+async def admin_premium_list(secret: str = Query(..., description="管理密钥")):
+    """查询所有付费手机号"""
+    if secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="无权限")
+    
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT phone, expires_at, note, created_at FROM premium_phones ORDER BY created_at DESC")
+        rows = cur.fetchall()
+    
+    return {
+        "success": True,
+        "count": len(rows),
+        "data": [dict(r) for r in rows]
+    }
+
+@app.get("/api/admin/check-phone")
+async def admin_check_phone(
+    phone: str = Query(..., description="手机号"),
+    secret: str = Query(..., description="管理密钥")
+):
+    """查询手机号付费状态"""
+    if secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="无权限")
+    
+    is_premium = check_phone_premium(phone)
+    
+    # Also check today usage
+    today = datetime.now().date().isoformat()
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) as cnt FROM leads WHERE phone = ? AND date(created_at) = ?",
+            (phone, today)
+        )
+        today_count = cur.fetchone()["cnt"]
+    
+    return {
+        "success": True,
+        "phone": phone,
+        "is_premium": is_premium,
+        "today_free_usage": today_count,
+        "daily_limit": FREE_DAILY_LIMIT
+    }
+
+@app.get("/api/leads")
+async def get_leads(limit: int = Query(default=50)):
+    """获取免费诊断线索（管理用）"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT * FROM leads ORDER BY created_at DESC LIMIT ?", (limit,))
+        leads = [dict(row) for row in c.fetchall()]
+    return {"success": True, "data": leads, "count": len(leads)}
+
+# ==================== 启动入口 ====================
+if __name__ == "__main__":
+    import uvicorn
+    print("🚀 启动 三三狐GEO API 服务...")
+    print(f"📍 服务地址: http://localhost:5000")
+    print(f"📡 API端点: http://localhost:5000/api/analyze")
+    print(f"🔧 文档地址: http://localhost:5000/docs")
+    print(f"💾 数据库: {DATABASE_PATH}")
+    print()
+    uvicorn.run(app, host="0.0.0.0", port=5000)
+
+
+# ==================== 监测功能 API ====================
+
+class MonitorRequest(BaseModel):
+    """监测请求模型"""
+    brand: str = Field(..., description="品牌名称")
+    industry: str = Field(default="综合", description="行业类型")
+    device_id: str = Field(default="default", description="设备ID")
+
+@app.post("/api/monitor/start")
+async def start_monitor(req: MonitorRequest):
+    """启动品牌GEO监测 - 实时查询多平台AI搜索引擎"""
+    try:
+        result = await run_brand_monitor(req.brand, req.industry)
+        return {"success": True, "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"监测执行失败: {str(e)}")
+
+@app.get("/api/monitor/history")
+async def get_monitor_history(brand: str = Query(default=None), limit: int = Query(default=10)):
+    """获取监测历史"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if brand:
+            c.execute("SELECT * FROM monitor_results WHERE brand = ? ORDER BY created_at DESC LIMIT ?", (brand, limit))
+        else:
+            c.execute("SELECT * FROM monitor_results ORDER BY created_at DESC LIMIT ?", (limit,))
+        results = [dict(row) for row in c.fetchall()]
+        for r in results:
+            try:
+                r['platform_details'] = json.loads(r.get('platform_details', '{}'))
+            except:
+                r['platform_details'] = {}
+        return {"success": True, "data": results}
+
+# ==================== SSE 流式分析端点 ====================
+
+@app.get("/api/analyze/stream")
+async def analyze_stream(
+    brand: str = Query(...),
+    industry: str = Query("通用"),
+    atype: str = Query("brand_analysis"),
+    device_id: str = Query("default"),
+    phone: str = Query(""),
+    wechat: str = Query(""),
+    company: str = Query("")
+):
+    from fastapi.responses import StreamingResponse
+    
+    async def generate():
+        import json as json_mod
+        status = await get_user_status(device_id)
+        is_free = not (status.is_premium or (check_phone_premium(phone) if phone.strip() else False))
+        
+        if is_free and not phone.strip():
+            evt = {"type": "error", "message": "免费诊断需提供手机号，付费后可无限次检测"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+            return
+        
+        if is_free and not check_phone_daily_limit(phone.strip()):
+            evt = {"type": "error", "message": "您已使用免费检测机会，付费后可无限次检测+解锁播种方案"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+            return
+        
+        cached = get_cached_report(phone.strip(), brand.strip())
+        if cached:
+            evt = {"type": "progress", "step": 1, "total": 5, "message": "📋 发现有缓存报告，直接加载..."}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+            cached.setdefault("_meta", {})["from_cache"] = True
+            evt = {"type": "complete", "data": cached}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+            return
+        
+        is_full = status.is_premium or (check_phone_premium(phone) if phone.strip() else False)
+        industry_name_map = {"catering": "餐饮美食", "realestate": "房产家居", "commerce": "商业综合体", "auto": "汽车交通", "tourism": "文旅景区", "education": "教育培训", "medical": "医疗健康", "finance": "金融理财", "retail": "零售消费", "internet": "互联网科技", "manufacturing": "制造工业", "realestate_service": "生活服务", "media": "传媒营销", "food": "食品饮料", "logistics": "物流仓储", "other": "其他行业"}
+        industry_name = industry_name_map.get(industry, industry)
+        prompt = get_brand_analysis_prompt(brand.strip(), industry, is_full)
+        
+        evt = {"type": "progress", "step": 1, "total": 5, "message": "🔍 正在调用DeepSeek分析品牌在AI搜索中的可见度..."}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        try:
+            response_text = await call_deepseek(prompt, SYSTEM_PROMPT)
+            analysis_data = safe_json_loads(response_text)
+            evt = {"type": "progress", "step": 1, "total": 5, "message": "✅ 品牌可见度分析完成"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        except Exception as e:
+            evt = {"type": "progress", "step": 1, "total": 5, "message": "⚠️ DeepSeek调用失败，使用备选方案..."}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+            analysis_data = generate_mock_analysis(brand, industry, is_full)
+        
+        evt = {"type": "progress", "step": 2, "total": 5, "message": "🤖 正在从通义千问获取真实搜索数据..."}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        try:
+            real_search_data = await query_ai_search_real(brand.strip(), industry_name)
+            analysis_data["ai_search_real"] = real_search_data
+            analysis_data["data_sources"] = ["DeepSeek(评分分析)", "千问(真实搜索)"]
+            evt = {"type": "progress", "step": 2, "total": 5, "message": "✅ 真实搜索数据已获取"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        except Exception as e:
+            analysis_data["data_sources"] = ["DeepSeek(评分分析)"]
+            evt = {"type": "progress", "step": 2, "total": 5, "message": "⚠️ 千问查询失败，使用单数据源"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        
+        evt = {"type": "progress", "step": 3, "total": 5, "message": "📊 正在计算GEO评分并生成诊断报告..."}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        report_id = save_report(phone.strip(), brand.strip(), industry, analysis_data, is_free)
+        if is_free:
+            save_lead(brand.strip(), industry, phone.strip(), wechat.strip(), company.strip(), device_id, analysis_data.get("geo_score", 0))
+            record_brand_monthly_usage(brand.strip(), phone.strip())
+        
+        evt = {"type": "progress", "step": 4, "total": 5, "message": "⚔️ 正在分析竞品表现并制定对比策略..."}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        if not is_free and atype == "brand_analysis":
+            try:
+                cs_prompt = get_content_strategy_prompt(brand, industry)
+                cs_text = await call_deepseek(cs_prompt, SYSTEM_PROMPT)
+                cs_data = safe_json_loads(cs_text)
+                analysis_data["content_strategy"] = {"target_keywords": cs_data.get("target_keywords", []), "content_types": cs_data.get("content_types", []), "platforms": cs_data.get("platforms", []), "sample_titles": cs_data.get("sample_titles", []), "content_calendar": cs_data.get("content_calendar", ""), "seo_tips": cs_data.get("seo_tips", []), "trending_topics": cs_data.get("trending_topics", [])}
+            except Exception as e:
+                analysis_data["content_strategy"] = None
+        
+        if is_free:
+            if "recommendations" in analysis_data and isinstance(analysis_data["recommendations"], list):
+                analysis_data["recommendations"] = analysis_data["recommendations"][:1]
+            if "competitors" in analysis_data:
+                analysis_data["competitors"] = []
+            if "diagnosis" in analysis_data and isinstance(analysis_data["diagnosis"], list):
+                analysis_data["diagnosis"] = analysis_data["diagnosis"][:1]
+            if "content_strategy" in analysis_data:
+                del analysis_data["content_strategy"]
+        
+        if atype == "brand_analysis":
+            save_score_history(brand, industry, {"geo_score": analysis_data.get("geo_score", 0), "visibility_score": analysis_data.get("visibility_score", 0), "recommendation_score": analysis_data.get("recommendation_score", 0), "sentiment_score": analysis_data.get("sentiment_score", 0)})
+        save_analysis_record(device_id, analysis_data, is_full)
+        
+        evt = {"type": "progress", "step": 5, "total": 5, "message": "💡 优化建议和内容播种方案已生成，报告完成！"}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        analysis_data["id"] = report_id
+        analysis_data["_report_id"] = report_id
+        analysis_data["_query_phone"] = phone.strip()
+        analysis_data["is_full_report"] = is_full
+        analysis_data.setdefault("_meta", {})["_report_id"] = report_id
+        analysis_data["_meta"]["_query_phone"] = phone.strip()
+        evt = {"type": "complete", "data": analysis_data}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+# ==================== 内容播种方案 SSE 流式端点 ====================
+
+@app.get("/api/analyze/stream/content_strategy")
+async def content_strategy_stream(
+    brand: str = Query(...),
+    industry: str = Query("通用"),
+    phone: str = Query(""),
+    device_id: str = Query("default")
+):
+    """内容播种方案流式生成端点"""
+    from fastapi.responses import StreamingResponse
+    
+    async def generate():
+        import json as json_mod
+        status = await get_user_status(device_id)
+        is_premium = status.is_premium or (check_phone_premium(phone) if phone.strip() else False)
+        
+        if not is_premium:
+            evt = {"type": "error", "message": "内容播种方案仅限付费用户使用"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+            return
+        
+        if not phone.strip():
+            evt = {"type": "error", "message": "请提供手机号"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+            return
+        
+        # Step 1: 分析目标关键词
+        evt = {"type": "progress", "step": 1, "total": 4, "message": "🎯 正在分析目标关键词..."}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        
+        try:
+            keyword_prompt = f"""请为「{brand}」在{industry}行业分析AI搜索优化策略。请分析并返回JSON格式：{{"target_keywords": ["关键词1", "关键词2", "关键词3", "关键词4", "关键词5"]}}。只输出JSON。"""
+            keyword_text = await call_deepseek(keyword_prompt, SYSTEM_PROMPT)
+            keyword_data = safe_json_loads(keyword_text)
+            target_keywords = keyword_data.get("target_keywords", [])
+            evt = {"type": "progress", "step": 1, "total": 4, "message": "✅ 目标关键词分析完成"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        except:
+            target_keywords = []
+        
+        # Step 2: 规划内容类型
+        evt = {"type": "progress", "step": 2, "total": 4, "message": "📝 正在规划内容类型..."}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        
+        try:
+            ct_text = await call_deepseek(f"""请为「{brand}」在{industry}行业推荐内容类型。返回JSON：{{"content_types": ["深度解读型", "对比评测型", "教程攻略型", "行业分析型", "用户案例型"]}}。只输出JSON。""", SYSTEM_PROMPT)
+            ct_data = safe_json_loads(ct_text)
+            content_types = ct_data.get("content_types", [])
+            evt = {"type": "progress", "step": 2, "total": 4, "message": "✅ 内容类型规划完成"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        except:
+            content_types = []
+        
+        # Step 3: 制定平台策略
+        evt = {"type": "progress", "step": 3, "total": 4, "message": "📡 正在制定平台策略..."}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        
+        try:
+            pl_text = await call_deepseek(f"""请为「{brand}」制定平台分发策略。返回JSON：{{"platforms": [{"name": "通义千问", "weight": 0.3}, {"name": "Kimi", "weight": 0.25}, {"name": "豆包", "weight": 0.2}, {"name": "文心", "weight": 0.15}, {"name": "元宝", "weight": 0.05}, {"name": "天工", "weight": 0.05}]}}。只输出JSON。""", SYSTEM_PROMPT)
+            pl_data = safe_json_loads(pl_text)
+            platforms = pl_data.get("platforms", [])
+            evt = {"type": "progress", "step": 3, "total": 4, "message": "✅ 平台策略制定完成"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        except:
+            platforms = []
+        
+        # Step 4: 生成爆款标题
+        evt = {"type": "progress", "step": 4, "total": 4, "message": "🔥 正在生成爆款标题..."}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        
+        try:
+            title_prompt = get_content_strategy_prompt(brand, industry)
+            full_text = await call_deepseek(title_prompt, SYSTEM_PROMPT)
+            full_data = safe_json_loads(full_text)
+            sample_titles = full_data.get("sample_titles", [])
+            content_calendar = full_data.get("content_calendar", "")
+            seo_tips = full_data.get("seo_tips", [])
+            trending_topics = full_data.get("trending_topics", [])
+            if not target_keywords: target_keywords = full_data.get("target_keywords", [])
+            if not content_types: content_types = full_data.get("content_types", [])
+            if not platforms: platforms = full_data.get("platforms", [])
+            evt = {"type": "progress", "step": 4, "total": 4, "message": "✅ 爆款标题生成完成"}
+            yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+        except:
+            sample_titles = []
+            content_calendar = ""
+            seo_tips = []
+            trending_topics = []
+        
+        content_strategy_data = {
+            "target_keywords": target_keywords or [],
+            "content_types": content_types or [],
+            "platforms": platforms or [],
+            "sample_titles": sample_titles or [],
+            "content_calendar": content_calendar,
+            "seo_tips": seo_tips or [],
+            "trending_topics": trending_topics or []
+        }
+        
+        update_report_content_strategy(phone.strip(), brand.strip(), content_strategy_data)
+        evt = {"type": "complete", "data": content_strategy_data}
+        yield "data: " + json_mod.dumps(evt, ensure_ascii=False) + "\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
